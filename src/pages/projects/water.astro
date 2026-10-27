@@ -593,6 +593,19 @@
     new THREE.MeshStandardMaterial({ color: 0xb3c39a, map: leafTexture, roughness: 0.92 }),
     new THREE.MeshStandardMaterial({ color: 0x849f78, map: leafTexture, roughness: 0.92 }),
   ];
+  const foliageGeometry = new THREE.SphereGeometry(1, 10, 8);
+  const treeFoliageGeometry = new THREE.ConeGeometry(1, 1, 6);
+  const foliageColors = [
+    new THREE.Color(0x758f5a),
+    new THREE.Color(0x91a56c),
+    new THREE.Color(0xa2ad72),
+    new THREE.Color(0x637e50),
+  ];
+  const foliageMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    map: leafTexture,
+    roughness: 0.96,
+  });
   const bushGeometry = new THREE.SphereGeometry(0.55, 16, 12);
   const bushMaterials = [
     new THREE.MeshStandardMaterial({ color: 0x789271, map: leafTexture, roughness: 0.94 }),
@@ -628,9 +641,12 @@
     furTexture,
     treeTrunkGeometry,
     ...treeLeafGeometries,
+    foliageGeometry,
+    treeFoliageGeometry,
     treeBranchGeometry,
     treeTrunkMaterial,
     ...treeLeafMaterials,
+    foliageMaterial,
     bushGeometry,
     ...bushMaterials,
     grassTuftGeometry,
@@ -644,9 +660,9 @@
   const shorelineGrass: THREE.Mesh[] = [];
   const landArea = landZones.reduce((area, zone) => area + zone.width * zone.depth, 0);
   const landAreaScale = Math.min(1.8, landArea / 330);
-  const treeCount = THREE.MathUtils.randInt(Math.round(12 * landAreaScale), Math.round(16 * landAreaScale));
-  const bushCount = THREE.MathUtils.randInt(Math.round(20 * landAreaScale), Math.round(28 * landAreaScale));
-  const grassTuftCount = THREE.MathUtils.randInt(Math.round(48 * landAreaScale), Math.round(72 * landAreaScale));
+  const treeCount = THREE.MathUtils.randInt(Math.round(15 * landAreaScale), Math.round(20 * landAreaScale));
+  const bushCount = THREE.MathUtils.randInt(Math.round(28 * landAreaScale), Math.round(36 * landAreaScale));
+  const grassTuftCount = THREE.MathUtils.randInt(Math.round(60 * landAreaScale), Math.round(84 * landAreaScale));
 
   function randomLandPoint(zoneIndex: number, margin = 0.55) {
     const zone = landZones[zoneIndex];
@@ -665,6 +681,62 @@
       Math.sin(x * 0.38) * 0.035 +
       Math.sin(z * 0.43) * 0.035 +
       Math.sin((x + z) * 0.68) * 0.025;
+  }
+
+  function addFoliageClusters(
+    parent: THREE.Group,
+    count: number,
+    height: number,
+    spread: number,
+    verticalRange: [number, number],
+    leafScale: number,
+    style: "tree" | "bush",
+  ) {
+    const clusters = new THREE.InstancedMesh(
+      style === "tree" ? treeFoliageGeometry : foliageGeometry,
+      foliageMaterial,
+      count,
+    );
+    const transform = new THREE.Object3D();
+    for (let cluster = 0; cluster < count; cluster++) {
+      const angle = Math.random() * Math.PI * 2;
+      const radius = Math.sqrt(Math.random()) * height * spread;
+      transform.position.set(
+        Math.cos(angle) * radius,
+        height * THREE.MathUtils.randFloat(...verticalRange),
+        Math.sin(angle) * radius,
+      );
+      transform.rotation.set(
+        THREE.MathUtils.randFloatSpread(0.7),
+        Math.random() * Math.PI,
+        THREE.MathUtils.randFloatSpread(0.7),
+      );
+      if (style === "tree") {
+        const direction = new THREE.Vector3(
+          Math.cos(angle) * 0.8,
+          THREE.MathUtils.randFloat(-0.05, 0.65),
+          Math.sin(angle) * 0.8,
+        ).normalize();
+        transform.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        transform.scale.set(
+          height * leafScale * THREE.MathUtils.randFloat(0.75, 1.15),
+          height * leafScale * THREE.MathUtils.randFloat(3.2, 5.2),
+          height * leafScale * THREE.MathUtils.randFloat(0.75, 1.15),
+        );
+      } else {
+        transform.scale.set(
+          height * leafScale * THREE.MathUtils.randFloat(0.75, 1.3),
+          height * leafScale * THREE.MathUtils.randFloat(0.65, 1.05),
+          height * leafScale * THREE.MathUtils.randFloat(0.75, 1.3),
+        );
+      }
+      transform.updateMatrix();
+      clusters.setMatrixAt(cluster, transform.matrix);
+      clusters.setColorAt(cluster, foliageColors[Math.floor(Math.random() * foliageColors.length)]);
+    }
+    clusters.castShadow = true;
+    clusters.receiveShadow = true;
+    parent.add(clusters);
   }
 
   for (let index = 0; index < treeCount; index++) {
@@ -695,7 +767,7 @@
         tree.add(crown);
       }
     } else {
-      const crownClusters = THREE.MathUtils.randInt(7, 11);
+      const crownClusters = THREE.MathUtils.randInt(12, 17);
       for (let cluster = 0; cluster < crownClusters; cluster++) {
         const angle = Math.random() * Math.PI * 2;
         const radius = Math.random() * 0.56;
@@ -716,6 +788,7 @@
         tree.add(crown);
       }
     }
+    addFoliageClusters(tree, THREE.MathUtils.randInt(70, 95), 2.8, 0.2, [0.52, 0.9], 0.035, "tree");
 
     tree.position.copy(position);
     tree.position.y = landHeightAt(position.x, position.z);
@@ -737,12 +810,12 @@
     const position = randomLandPoint(zoneIndex);
     const bush = new THREE.Group();
     const material = bushMaterials[Math.floor(Math.random() * bushMaterials.length)];
-    for (let cluster = 0; cluster < 3; cluster++) {
+    for (let cluster = 0; cluster < 5; cluster++) {
       const leaf = new THREE.Mesh(bushGeometry, material);
       leaf.position.set(
-        (cluster - 1) * 0.35,
-        0.28 + (cluster % 2) * 0.12,
-        cluster === 1 ? 0.12 : -0.08,
+        (cluster - 2) * 0.28,
+        0.28 + (cluster % 2) * 0.14,
+        cluster % 2 === 0 ? 0.12 : -0.14,
       );
       leaf.scale.set(
         THREE.MathUtils.randFloat(0.62, 0.85),
@@ -751,6 +824,7 @@
       );
       bush.add(leaf);
     }
+    addFoliageClusters(bush, THREE.MathUtils.randInt(18, 25), 1.4, 0.34, [0.18, 0.68], 0.075, "bush");
     bush.position.copy(position);
     bush.position.y = landHeightAt(position.x, position.z);
     bush.rotation.y = Math.random() * Math.PI * 2;
@@ -780,6 +854,8 @@
 
   type LandAnimalAgent = {
     root: THREE.Group;
+    head: THREE.Group;
+    tail: THREE.Group;
     species: string;
     zoneIndex: number;
     target: THREE.Vector3;
@@ -800,12 +876,14 @@
   const animalBodyGeometry = new THREE.SphereGeometry(1, 24, 16);
   const animalHeadGeometry = new THREE.SphereGeometry(1, 20, 14);
   const animalLegGeometry = new THREE.CylinderGeometry(0.055, 0.075, 0.42, 10);
+  const animalHoofGeometry = new THREE.CylinderGeometry(0.055, 0.075, 0.09, 8);
   const animalAntlerGeometry = new THREE.CylinderGeometry(0.018, 0.04, 0.42, 8);
   const animalAntlerTipGeometry = new THREE.CylinderGeometry(0.012, 0.027, 0.27, 8);
   const animalEarGeometry = new THREE.SphereGeometry(1, 14, 10);
   const animalTailGeometry = new THREE.SphereGeometry(1, 16, 12);
   const animalNoseGeometry = new THREE.SphereGeometry(0.075, 12, 8);
   const animalEyeGeometry = new THREE.SphereGeometry(0.035, 12, 10);
+  const animalHighlightGeometry = new THREE.SphereGeometry(0.012, 8, 8);
   const animalCoatMaterials = landAnimalTypes.map(({ coat }) => new THREE.MeshStandardMaterial({
     color: coat,
     map: furTexture,
@@ -825,20 +903,28 @@
     roughness: 0.9,
   }));
   const animalEyeMaterial = new THREE.MeshStandardMaterial({ color: 0x191510, roughness: 0.28 });
+  const animalNoseMaterial = new THREE.MeshStandardMaterial({ color: 0x30231c, roughness: 0.42 });
+  const animalHoofMaterial = new THREE.MeshStandardMaterial({ color: 0x40342c, roughness: 0.86 });
+  const animalEyeHighlightMaterial = new THREE.MeshBasicMaterial({ color: 0xfff4dc });
   const animalResources: Array<THREE.BufferGeometry | THREE.Material> = [
     animalBodyGeometry,
     animalHeadGeometry,
     animalLegGeometry,
+    animalHoofGeometry,
     animalAntlerGeometry,
     animalAntlerTipGeometry,
     animalEarGeometry,
     animalTailGeometry,
     animalNoseGeometry,
     animalEyeGeometry,
+    animalHighlightGeometry,
     ...animalCoatMaterials,
     ...animalLightMaterials,
     ...animalEarMaterials,
     animalEyeMaterial,
+    animalNoseMaterial,
+    animalHoofMaterial,
+    animalEyeHighlightMaterial,
   ];
   disposableResources.push(...animalResources);
 
@@ -871,52 +957,97 @@
     const animalType = landAnimalTypes[Math.floor(Math.random() * landAnimalTypes.length)];
     const typeIndex = landAnimalTypes.indexOf(animalType);
     const root = new THREE.Group();
+    const head = new THREE.Group();
+    const tail = new THREE.Group();
     const coat = animalCoatMaterials[typeIndex];
     const lightCoat = animalLightMaterials[typeIndex];
-    const animalScale = animalType.scale * THREE.MathUtils.randFloat(0.9, 1.12);
-    const body = addAnimalPart(root, animalBodyGeometry, coat, [0, 0.48, 0.02], [0.42, 0.37, 0.72]);
-    addAnimalPart(root, animalHeadGeometry, coat, [0, 0.72, -0.46], [0.27, 0.29, 0.28]);
-    addAnimalPart(root, animalHeadGeometry, lightCoat, [0, 0.62, -0.69], [0.16, 0.12, 0.2]);
-    addAnimalPart(root, animalNoseGeometry, animalEarMaterials[typeIndex], [0, 0.69, -0.85], [0.8, 0.66, 0.8]);
+    const animalScale = animalType.scale * THREE.MathUtils.randFloat(1.05, 1.2);
+    const deer = animalType.name === "deer";
+    const rabbit = animalType.name === "rabbit";
+    const fox = animalType.name === "fox";
+    const squirrel = animalType.name === "squirrel";
+    const body = addAnimalPart(
+      root,
+      animalBodyGeometry,
+      coat,
+      [0, 0.47, 0.02],
+      deer ? [0.38, 0.34, 0.76] : rabbit ? [0.36, 0.31, 0.57] : [0.39, 0.34, 0.68],
+    );
+    if (deer) {
+      addAnimalPart(root, animalBodyGeometry, coat, [0, 0.68, -0.32], [0.17, 0.34, 0.2])
+        .rotation.x = -0.27;
+      addAnimalPart(root, animalBodyGeometry, lightCoat, [0, 0.34, 0.17], [0.25, 0.19, 0.37]);
+    } else if (fox) {
+      addAnimalPart(root, animalBodyGeometry, lightCoat, [0, 0.34, -0.06], [0.27, 0.17, 0.49]);
+    } else if (rabbit) {
+      addAnimalPart(root, animalBodyGeometry, coat, [0, 0.4, 0.35], [0.25, 0.25, 0.29]);
+      addAnimalPart(root, animalBodyGeometry, lightCoat, [0, 0.31, 0.04], [0.24, 0.16, 0.38]);
+    } else {
+      addAnimalPart(root, animalBodyGeometry, lightCoat, [0, 0.33, -0.02], [0.22, 0.14, 0.34]);
+    }
+
+    head.position.set(0, deer ? 0.91 : rabbit ? 0.73 : 0.76, deer ? -0.48 : -0.48);
+    addAnimalPart(head, animalHeadGeometry, coat, [0, 0, 0], deer ? [0.22, 0.25, 0.25] : [0.25, 0.25, 0.27]);
+    addAnimalPart(
+      head,
+      animalHeadGeometry,
+      lightCoat,
+      [0, fox ? -0.055 : -0.075, fox ? -0.235 : -0.205],
+      fox ? [0.15, 0.12, 0.28] : rabbit ? [0.15, 0.12, 0.2] : [0.14, 0.11, 0.17],
+    );
+    addAnimalPart(head, animalNoseGeometry, animalNoseMaterial, [0, -0.035, fox ? -0.48 : -0.365], [0.78, 0.62, 0.85]);
     for (const side of [-1, 1]) {
       addAnimalPart(
-        root,
+        head,
         animalEyeGeometry,
         animalEyeMaterial,
-        [side * 0.22, 0.79, -0.61],
-        [1, 1, 0.75],
+        [side * 0.2, 0.075, -0.105],
+        [deer ? 0.82 : 1, 0.9, 0.72],
+      );
+      addAnimalPart(
+        head,
+        animalHighlightGeometry,
+        animalEyeHighlightMaterial,
+        [side * 0.205 - side * 0.007, 0.087, -0.127],
+        [1, 1, 1],
+      );
+      addAnimalPart(
+        head,
+        animalNoseGeometry,
+        animalEyeMaterial,
+        [side * 0.027, -0.025, fox ? -0.5 : -0.38],
+        [0.16, 0.13, 0.18],
       );
     }
 
-    if (animalType.name === "rabbit") {
+    if (rabbit) {
       for (const side of [-1, 1]) {
         addAnimalPart(
-          root,
+          head,
           animalEarGeometry,
-          animalCoatMaterials[typeIndex],
-          [side * 0.13, 1.05, -0.43],
-          [0.09, 0.33, 0.12],
+          coat,
+          [side * 0.12, 0.29, 0.035],
+          [0.085, 0.36, 0.105],
         ).rotation.z = side * -0.16;
         addAnimalPart(
-          root,
+          head,
           animalEarGeometry,
           animalEarMaterials[typeIndex],
-          [side * 0.13, 1.06, -0.45],
-          [0.047, 0.24, 0.065],
-        );
+          [side * 0.12, 0.3, -0.015],
+          [0.045, 0.27, 0.065],
+        ).rotation.z = side * -0.16;
       }
-    } else if (animalType.name === "deer") {
-      addAnimalPart(root, animalBodyGeometry, coat, [0, 0.69, -0.3], [0.19, 0.34, 0.2]);
+    } else if (deer) {
       for (const side of [-1, 1]) {
         addAnimalPart(
-          root,
+          head,
           animalEarGeometry,
           lightCoat,
-          [side * 0.28, 0.84, -0.39],
-          [0.2, 0.075, 0.11],
+          [side * 0.24, 0.07, 0.035],
+          [0.19, 0.065, 0.085],
         ).rotation.z = side * 0.35;
         const antler = new THREE.Group();
-        antler.position.set(side * 0.13, 0.88, -0.43);
+        antler.position.set(side * 0.12, 0.2, 0.005);
         antler.rotation.z = -side * 0.24;
         addAnimalPart(antler, animalAntlerGeometry, animalEarMaterials[typeIndex], [side * 0.035, 0.19, 0], [1, 1, 1]);
         for (let tine = 0; tine < 2; tine++) {
@@ -929,31 +1060,55 @@
           );
           branch.rotation.z = -side * 0.62;
         }
-        root.add(antler);
+        head.add(antler);
       }
-    } else if (animalType.name === "fox") {
-      addAnimalPart(root, animalTailGeometry, lightCoat, [0, 0.48, 0.77], [0.25, 0.23, 0.52])
-        .rotation.x = -0.35;
-    } else {
-      addAnimalPart(root, animalTailGeometry, coat, [0, 0.49, 0.77], [0.2, 0.22, 0.43])
-        .rotation.x = -0.55;
+    } else if (fox) {
       for (const side of [-1, 1]) {
-        addAnimalPart(
-          root,
-          animalEarGeometry,
-          coat,
-          [side * 0.2, 0.91, -0.48],
-          [0.11, 0.12, 0.1],
-        );
+        addAnimalPart(head, animalEarGeometry, coat, [side * 0.15, 0.24, 0.035], [0.11, 0.19, 0.105])
+          .rotation.z = side * -0.2;
+        addAnimalPart(head, animalEarGeometry, animalEarMaterials[typeIndex], [side * 0.15, 0.25, 0.01], [0.055, 0.12, 0.065])
+          .rotation.z = side * -0.2;
       }
+    } else {
+      addAnimalPart(head, animalEarGeometry, coat, [-0.17, 0.19, 0.02], [0.09, 0.1, 0.08]);
+      addAnimalPart(head, animalEarGeometry, coat, [0.17, 0.19, 0.02], [0.09, 0.1, 0.08]);
     }
+
+    root.add(head);
+    tail.position.set(0, squirrel ? 0.53 : 0.48, 0.62);
+    if (fox) {
+      addAnimalPart(tail, animalTailGeometry, coat, [0, 0.02, 0.12], [0.22, 0.23, 0.43]);
+      addAnimalPart(tail, animalTailGeometry, lightCoat, [0, -0.015, 0.41], [0.16, 0.17, 0.21]);
+      tail.rotation.x = -0.28;
+    } else if (squirrel) {
+      addAnimalPart(tail, animalTailGeometry, coat, [0, 0.18, 0.02], [0.21, 0.38, 0.2]);
+      addAnimalPart(tail, animalTailGeometry, lightCoat, [0, 0.4, 0.015], [0.15, 0.17, 0.16]);
+      tail.rotation.x = -0.35;
+    } else if (rabbit) {
+      addAnimalPart(tail, animalTailGeometry, lightCoat, [0, 0.015, 0.04], [0.13, 0.13, 0.13]);
+    } else {
+      addAnimalPart(tail, animalTailGeometry, lightCoat, [0, 0.02, 0.02], [0.09, 0.11, 0.13]);
+    }
+    root.add(tail);
 
     const legs: THREE.Group[] = [];
     for (const side of [-1, 1]) {
       for (const along of [-1, 1]) {
         const leg = new THREE.Group();
-        leg.position.set(side * 0.25, 0.31, along * 0.42);
-        addAnimalPart(leg, animalLegGeometry, coat, [0, -0.04, 0], [1, 1, 1]);
+        const legLength = deer ? 1.35 : rabbit && along > 0 ? 0.95 : 1;
+        leg.position.set(side * (deer ? 0.23 : 0.24), deer ? 0.34 : 0.3, along * (deer ? 0.39 : 0.39));
+        addAnimalPart(leg, animalLegGeometry, coat, [0, -0.04, 0], [deer ? 0.82 : 1, legLength, deer ? 0.82 : 1]);
+        if (deer || fox) {
+          addAnimalPart(
+            leg,
+            animalHoofGeometry,
+            animalHoofMaterial,
+            [0, -0.25 * legLength, 0],
+            [deer ? 0.9 : 0.75, 1, deer ? 0.9 : 0.75],
+          );
+        } else {
+          addAnimalPart(leg, animalBodyGeometry, lightCoat, [0, -0.24, -0.015], [0.09, 0.055, 0.12]);
+        }
         root.add(leg);
         legs.push(leg);
       }
@@ -970,6 +1125,8 @@
     scene.add(root);
     landAnimalAgents.push({
       root,
+      head,
+      tail,
       species: animalType.name,
       zoneIndex,
       target: randomAnimalPoint(zoneIndex),
@@ -1122,15 +1279,62 @@
     roughness: 0.54,
     metalness: 0.04,
   });
+  const deckMaterial = new THREE.MeshStandardMaterial({
+    color: 0xd8c6a1,
+    roughness: 0.84,
+  });
   const hull = new THREE.Mesh(hullGeometry, hullMaterial);
   hull.position.y = 0.16;
   sailboat.add(hull);
 
-  const trimGeometry = new THREE.BoxGeometry(0.035, 0.025, 1.42);
-  const trimMaterial = new THREE.MeshStandardMaterial({ color: 0xe6c487, roughness: 0.46 });
+  const deckGeometry = new THREE.ExtrudeGeometry(hullShape, {
+    depth: 0.025,
+    bevelEnabled: true,
+    bevelSegments: 1,
+    steps: 1,
+    bevelSize: 0.018,
+    bevelThickness: 0.018,
+  });
+  deckGeometry.rotateX(Math.PI / 2);
+  const deck = new THREE.Mesh(deckGeometry, deckMaterial);
+  deck.position.y = 0.24;
+  sailboat.add(deck);
+
+  const trimGeometry = new THREE.BoxGeometry(0.035, 0.025, 1.5);
+  const trimMaterial = new THREE.MeshStandardMaterial({ color: 0xe6c487, roughness: 0.58 });
   const hullTrim = new THREE.Mesh(trimGeometry, trimMaterial);
   hullTrim.position.set(0, 0.17, 0.02);
   sailboat.add(hullTrim);
+
+  const cockpitMaterial = new THREE.MeshStandardMaterial({
+    color: 0x382e28,
+    roughness: 0.9,
+  });
+  const cockpitGeometry = new THREE.CylinderGeometry(0.19, 0.16, 0.035, 20);
+  const cockpit = new THREE.Mesh(cockpitGeometry, cockpitMaterial);
+  cockpit.scale.z = 1.5;
+  cockpit.position.set(0, 0.265, 0.38);
+  sailboat.add(cockpit);
+
+  const cabinMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe2d9c2,
+    roughness: 0.75,
+  });
+  const cabinGeometry = new THREE.BoxGeometry(0.38, 0.22, 0.42);
+  const cabin = new THREE.Mesh(cabinGeometry, cabinMaterial);
+  cabin.position.set(0, 0.34, 0.06);
+  sailboat.add(cabin);
+  const windowMaterial = new THREE.MeshStandardMaterial({
+    color: 0x557c83,
+    roughness: 0.32,
+    metalness: 0.08,
+  });
+  const cabinWindowGeometry = new THREE.BoxGeometry(0.018, 0.095, 0.22);
+  for (const side of [-1, 1]) {
+    const windowMesh = new THREE.Mesh(cabinWindowGeometry, windowMaterial);
+    windowMesh.position.set(side * 0.195, 0.37, 0.06);
+    sailboat.add(windowMesh);
+  }
 
   const mastGeometry = new THREE.CylinderGeometry(0.022, 0.032, 1.63, 10);
   const mastMaterial = new THREE.MeshStandardMaterial({ color: 0xd4c09a, roughness: 0.72 });
@@ -1139,11 +1343,33 @@
   sailboat.add(mast);
 
   const sailGeometry = new THREE.BufferGeometry();
-  sailGeometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([0, 0.2, 0.03, 0, 1.75, 0.03, 0, 0.2, 0.76], 3),
-  );
-  sailGeometry.setIndex([0, 1, 2]);
+  const sailPositions: number[] = [];
+  const sailIndices: number[] = [];
+  const sailRows = 10;
+  const sailColumns = 6;
+  for (let row = 0; row <= sailRows; row++) {
+    const heightFraction = row / sailRows;
+    for (let column = 0; column <= sailColumns; column++) {
+      const widthFraction = column / sailColumns;
+      const sailWidth = 0.72 * (1 - heightFraction);
+      sailPositions.push(
+        sailWidth * widthFraction,
+        0.22 + heightFraction * 1.52,
+        0.025 + Math.sin(widthFraction * Math.PI) * 0.12 * (1 - heightFraction * 0.35),
+      );
+    }
+  }
+  for (let row = 0; row < sailRows; row++) {
+    for (let column = 0; column < sailColumns; column++) {
+      const a = row * (sailColumns + 1) + column;
+      const b = a + 1;
+      const c = a + sailColumns + 1;
+      const d = c + 1;
+      sailIndices.push(a, c, b, b, c, d);
+    }
+  }
+  sailGeometry.setAttribute("position", new THREE.Float32BufferAttribute(sailPositions, 3));
+  sailGeometry.setIndex(sailIndices);
   sailGeometry.computeVertexNormals();
   const sailMaterial = new THREE.MeshStandardMaterial({
     color: 0xf3e7c4,
@@ -1155,12 +1381,24 @@
   const sail = new THREE.Mesh(sailGeometry, sailMaterial);
   sailboat.add(sail);
 
+  const boomGeometry = new THREE.CylinderGeometry(0.018, 0.018, 0.78, 8);
+  boomGeometry.rotateZ(Math.PI / 2);
+  const boom = new THREE.Mesh(boomGeometry, mastMaterial);
+  boom.position.set(0.36, 0.24, 0.06);
+  sailboat.add(boom);
+
   const jibGeometry = new THREE.BufferGeometry();
   jibGeometry.setAttribute(
     "position",
-    new THREE.Float32BufferAttribute([0, 0.2, -0.08, 0, 1.13, -0.08, 0, 0.2, -0.49], 3),
+    new THREE.Float32BufferAttribute([
+      0, 0.23, -0.12,
+      0, 1.7, 0.03,
+      0.035, 0.23, -0.8,
+      0, 0.23, -0.12,
+      0, 1.7, 0.03,
+      -0.035, 0.23, -0.8,
+    ], 3),
   );
-  jibGeometry.setIndex([0, 1, 2]);
   jibGeometry.computeVertexNormals();
   const jibMaterial = new THREE.MeshStandardMaterial({
     color: 0xd6e0e0,
@@ -1169,8 +1407,34 @@
   });
   const jib = new THREE.Mesh(jibGeometry, jibMaterial);
   sailboat.add(jib);
-  sailboat.position.set(4.8, 0, 2.2);
-  sailboat.scale.setScalar(1.15);
+
+  const rudderGroup = new THREE.Group();
+  rudderGroup.position.set(0, 0.13, 0.82);
+  const rudderGeometry = new THREE.BoxGeometry(0.055, 0.34, 0.22);
+  const rudder = new THREE.Mesh(rudderGeometry, hullMaterial);
+  rudder.position.y = -0.13;
+  rudderGroup.add(rudder);
+  const tillerGeometry = new THREE.BoxGeometry(0.035, 0.025, 0.4);
+  const tiller = new THREE.Mesh(tillerGeometry, mastMaterial);
+  tiller.position.set(0, 0.12, 0.15);
+  rudderGroup.add(tiller);
+  sailboat.add(rudderGroup);
+
+  const riggingMaterial = new THREE.MeshStandardMaterial({
+    color: 0x645d50,
+    roughness: 0.8,
+  });
+  const riggingGeometry = new THREE.CylinderGeometry(0.006, 0.006, 1, 6);
+  for (const side of [-1, 1]) {
+    const stay = new THREE.Mesh(riggingGeometry, riggingMaterial);
+    stay.position.set(side * 0.17, 0.97, 0.44);
+    stay.rotation.x = side * 0.43;
+    stay.rotation.z = side * 0.1;
+    stay.scale.y = 1.34;
+    sailboat.add(stay);
+  }
+  sailboat.position.set(1.8, 0, 2.2);
+  sailboat.scale.setScalar(1.3);
   sailboat.rotation.y = -0.35;
   sailboat.traverse((part) => {
     if (part instanceof THREE.Mesh) part.castShadow = true;
@@ -1179,14 +1443,27 @@
   disposableResources.push(
     hullGeometry,
     hullMaterial,
+    deckGeometry,
+    deckMaterial,
     trimGeometry,
     trimMaterial,
+    cockpitGeometry,
+    cockpitMaterial,
+    cabinGeometry,
+    cabinMaterial,
+    cabinWindowGeometry,
+    windowMaterial,
     mastGeometry,
     mastMaterial,
     sailGeometry,
     sailMaterial,
+    boomGeometry,
     jibGeometry,
     jibMaterial,
+    rudderGeometry,
+    tillerGeometry,
+    riggingGeometry,
+    riggingMaterial,
   );
 
   const sailboatKeys = new Set<string>();
@@ -1194,6 +1471,7 @@
   const sailboatForward = new THREE.Vector3();
   const sailboatForwardVelocity = new THREE.Vector3();
   const sailboatLateralVelocity = new THREE.Vector3();
+  let sailboatTurnRate = 0;
   const duckPlanarVelocity = new THREE.Vector3();
   const collisionNormal = new THREE.Vector3();
   const collisionOffset = new THREE.Vector3();
@@ -1495,6 +1773,7 @@
     position: THREE.Vector3,
     targetHeight: number,
     rotation: number,
+    foliageType: "tree" | "bush",
   ) {
     const model = source.clone(true);
     model.updateMatrixWorld(true);
@@ -1508,6 +1787,11 @@
 
     const instance = new THREE.Group();
     instance.add(model);
+    if (foliageType === "tree") {
+      addFoliageClusters(instance, THREE.MathUtils.randInt(70, 95), targetHeight, 0.13, [0.64, 0.94], 0.035, "tree");
+    } else {
+      addFoliageClusters(instance, THREE.MathUtils.randInt(18, 26), targetHeight, 0.38, [0.2, 0.76], 0.085, "bush");
+    }
     instance.position.set(position.x, landHeightAt(position.x, position.z), position.z);
     instance.rotation.y = rotation;
     return instance;
@@ -1547,7 +1831,13 @@
       for (const tree of shorelineTrees) scene.remove(tree);
       shorelineTrees.splice(0, shorelineTrees.length);
       for (const placement of placements) {
-        const tree = createLandscapeInstance(treeSource, placement.position, placement.height, placement.rotation);
+        const tree = createLandscapeInstance(
+          treeSource,
+          placement.position,
+          placement.height,
+          placement.rotation,
+          "tree",
+        );
         scene.add(tree);
         shorelineTrees.push(tree);
       }
@@ -1574,6 +1864,7 @@
           position,
           THREE.MathUtils.randFloat(0.65, 1.35),
           Math.random() * Math.PI * 2,
+          "bush",
         );
         scene.add(bush);
         shorelineBushes.push(bush);
@@ -2005,8 +2296,11 @@
     const windPower = 0.3 + wind * 0.7;
     sailboatForward.set(Math.sin(sailboat.rotation.y), 0, -Math.cos(sailboat.rotation.y));
     const forwardSpeed = sailboatVelocity.dot(sailboatForward);
-    const steeringResponse = 0.16 + Math.min(Math.abs(forwardSpeed), 1.5) * 0.72;
-    sailboat.rotation.y += steering * steeringResponse * Math.sign(forwardSpeed || 1) * delta;
+    const steeringAuthority = 0.08 + Math.min(Math.abs(forwardSpeed) / 2, 1) * 1.1;
+    const targetTurnRate = steering * steeringAuthority * Math.sign(forwardSpeed || 1);
+    sailboatTurnRate = THREE.MathUtils.damp(sailboatTurnRate, targetTurnRate, 4.5, delta);
+    sailboat.rotation.y += sailboatTurnRate * delta;
+    rudderGroup.rotation.y = -steering * 0.42;
 
     sailboatForward.set(Math.sin(sailboat.rotation.y), 0, -Math.cos(sailboat.rotation.y));
     sailboatVelocity.addScaledVector(sailboatForward, throttle * 2.2 * windPower * delta);
@@ -2044,7 +2338,7 @@
     sailboat.position.y = sampleWaveHeight(sailboat.position.x, sailboat.position.z) +
       Math.sin(elapsed * 1.9 + sailboat.position.z) * 0.024;
     sailboat.rotation.x = Math.sin(elapsed * 1.3 + sailboat.position.x) * 0.012;
-    sailboat.rotation.z = -steering * Math.min(sailboatVelocity.length(), 1) * 0.045 +
+    sailboat.rotation.z = -sailboatTurnRate * Math.min(Math.abs(forwardSpeed), 1.5) * 0.025 +
       Math.sin(elapsed * 1.1 + sailboat.position.z) * 0.012;
 
     sailboatWakeTimer += delta;
@@ -2074,7 +2368,7 @@
     }
 
     for (const animal of landAnimalAgents) {
-      const { root, legs, target, phase, speed } = animal;
+      const { root, head, tail, legs, target, phase, speed } = animal;
       const dx = target.x - root.position.x;
       const dz = target.z - root.position.z;
       const distance = Math.hypot(dx, dz);
@@ -2089,6 +2383,8 @@
         animal.currentSpeed = THREE.MathUtils.damp(animal.currentSpeed, 0, 2.2, delta);
         root.position.y = landHeightAt(root.position.x, root.position.z);
         root.rotation.x = Math.sin(elapsed * 1.5 + phase) * 0.01;
+        head.rotation.x = Math.sin(elapsed * 1.3 + phase) * 0.025;
+        tail.rotation.y = Math.sin(elapsed * 1.8 + phase) * (animal.species === "squirrel" ? 0.15 : 0.07);
         for (const leg of legs) {
           leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, 0, 5, delta);
         }
@@ -2119,6 +2415,8 @@
       root.position.y = landHeightAt(root.position.x, root.position.z) +
         Math.abs(Math.sin(animal.gaitPhase * 2)) * Math.min(animal.currentSpeed * 0.035, 0.018);
       root.rotation.x = Math.sin(animal.gaitPhase * 2) * Math.min(animal.currentSpeed * 0.025, 0.012);
+      head.rotation.x = Math.sin(animal.gaitPhase * 2 + phase) * 0.035;
+      tail.rotation.y = Math.sin(animal.gaitPhase + phase) * (animal.species === "squirrel" ? 0.2 : 0.1);
       const gait = stride * Math.min(speed * 1.1, 0.5);
       legs[0].rotation.x = gait;
       legs[1].rotation.x = -gait;
