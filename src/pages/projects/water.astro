@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#f3f7fc" />
     <meta
       name="description"
-      content="An interactive water experiment by Andrew Swanton, with ripples driven by a wave simulation and reflections that respond to the surface."
+      content="Explore an interactive water simulation with a randomized shoreline, detailed CC0 plant models, HDR environment lighting, swimming fish, and a steerable sailboat."
     />
     <title>Interactive Water | Andrew Swanton</title>
   </head>
@@ -28,8 +28,9 @@
         <p class="eyebrow"><span class="eyebrow-mark"></span> EXPERIMENT 001 · PHYSICS & GRAPHICS</p>
         <h1>Water,<br /><span>in motion.</span></h1>
         <p class="lead">
-          Steer a little sailboat with the arrow keys, push the floating sphere, and watch a
-          duck paddle through the moving water.
+          Steer a little sailboat through a living water simulation, framed by detailed
+          shoreline models and an HDRI sky. Watch the wildlife swim, and catch a fish leaping
+          from the water now and then.
         </p>
       </section>
 
@@ -43,7 +44,7 @@
           <canvas
             id="water"
             tabindex="0"
-            aria-label="Three-dimensional tiled pool with a steerable sailboat, an independently moving mallard, and a draggable sphere. Use the arrow keys to sail, drag open water to orbit the camera, or click the water to make a ripple."
+            aria-label="Three-dimensional pool surrounded by a randomly generated grassy shoreline with trees, bushes, and wandering wildlife. Steer the sailboat with arrow keys, drag the sphere or camera, or click the water to make a ripple."
           >          </canvas>
           <span id="ripple-impact" aria-hidden="true"></span>
           <p class="scene-hint" id="scene-hint" aria-live="polite">↑ forward · ↓ reverse · ←/→ steer · drag the sphere or water</p>
@@ -85,14 +86,14 @@
             <span class="note-number">03</span>
             <div>
               <h3>Reflections that move</h3>
-              <p>Moving wave normals bend bright highlights across the reflective surface, revealing the pool tiles underneath.</p>
+              <p>An HDR environment adds natural sky and landscape lighting to detailed CC0 shoreline models, while moving wave normals bend highlights across the water.</p>
             </div>
           </article>
         </div>
       </section>
 
       <p class="caveat">
-        This is a real-time surface-wave approximation, not a full fluid or ray-tracing simulation. Disturbances are balanced against surrounding troughs so the pool's mean water level stays constant.
+        The shoreline models and HDR environment are CC0 assets from Poly Haven; see the <a href="/assets/polyhaven/CC0-CREDITS.txt">asset credits</a>. Water and wildlife are rendered in real time, and the surface waves are an approximation—not a full fluid or ray-tracing simulation. Disturbances are balanced against surrounding troughs so the pool's mean water level stays constant.
         It is a work in progress—part physics experiment, part rendering study.
       </p>
 
@@ -106,6 +107,8 @@
 
 <script>
   import * as THREE from "three";
+  import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+  import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
   import { Water } from "three/addons/objects/Water.js";
 
   const canvas = document.querySelector<HTMLCanvasElement>("#water");
@@ -134,7 +137,7 @@
   }
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0b141a);
+  scene.fog = new THREE.Fog(0xb9c9c5, 34, 74);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 180);
   const cameraTarget = new THREE.Vector3(0, -1.2, -1);
   camera.position.set(10, 9.5, 14);
@@ -146,7 +149,33 @@
   const waveData = new Float32Array(waveSize * waveSize);
   const previousWaveData = new Float32Array(waveSize * waveSize);
   const nextWaveData = new Float32Array(waveSize * waveSize);
-  const disposableResources: Array<THREE.BufferGeometry | THREE.Material> = [];
+  const disposableResources: Array<THREE.BufferGeometry | THREE.Material | THREE.Texture> = [];
+  const environmentCanvas = document.createElement("canvas");
+  environmentCanvas.width = 512;
+  environmentCanvas.height = 256;
+  const environmentContext = environmentCanvas.getContext("2d");
+  if (!environmentContext) throw new Error("The environment lighting map could not be created.");
+  const skyGradient = environmentContext.createLinearGradient(0, 0, 0, environmentCanvas.height);
+  skyGradient.addColorStop(0, "#607f99");
+  skyGradient.addColorStop(0.38, "#a9c2c8");
+  skyGradient.addColorStop(0.52, "#e6d9bb");
+  skyGradient.addColorStop(0.62, "#82937a");
+  skyGradient.addColorStop(1, "#344b3b");
+  environmentContext.fillStyle = skyGradient;
+  environmentContext.fillRect(0, 0, environmentCanvas.width, environmentCanvas.height);
+  const sunGlow = environmentContext.createRadialGradient(122, 70, 5, 122, 70, 95);
+  sunGlow.addColorStop(0, "rgba(255, 242, 210, 0.9)");
+  sunGlow.addColorStop(0.18, "rgba(255, 232, 190, 0.32)");
+  sunGlow.addColorStop(1, "rgba(255, 232, 190, 0)");
+  environmentContext.fillStyle = sunGlow;
+  environmentContext.fillRect(20, 0, 204, 180);
+  const environmentTexture = new THREE.CanvasTexture(environmentCanvas);
+  environmentTexture.mapping = THREE.EquirectangularReflectionMapping;
+  environmentTexture.colorSpace = THREE.SRGBColorSpace;
+  environmentTexture.needsUpdate = true;
+  scene.environment = environmentTexture;
+  scene.environmentIntensity = 0.62;
+  scene.background = environmentTexture;
   const normalPixels = new Uint8Array(waveSize * waveSize * 4);
   const normalTexture = new THREE.DataTexture(
     normalPixels,
@@ -171,21 +200,59 @@
   const poolTop = 1.15;
   const tileSize = 0.55;
 
-  scene.add(new THREE.HemisphereLight(0x8db6ce, 0x071419, 1.2));
-  const poolLight = new THREE.DirectionalLight(0xc3f5ff, 2.1);
-  poolLight.position.set(-5, 12, 8);
+  const tileCanvas = document.createElement("canvas");
+  tileCanvas.width = 128;
+  tileCanvas.height = 128;
+  const tileContext = tileCanvas.getContext("2d");
+  if (!tileContext) throw new Error("The pool tile texture could not be created.");
+  tileContext.fillStyle = "#39727a";
+  tileContext.fillRect(0, 0, tileCanvas.width, tileCanvas.height);
+  for (let fleck = 0; fleck < 1100; fleck++) {
+    const brightness = Math.floor(72 + Math.random() * 70);
+    tileContext.fillStyle = `rgba(${brightness}, ${brightness + 18}, ${brightness + 20}, ${Math.random() * 0.22})`;
+    tileContext.fillRect(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  }
+  tileContext.strokeStyle = "rgba(12, 42, 48, 0.9)";
+  tileContext.lineWidth = 5;
+  tileContext.strokeRect(2.5, 2.5, 123, 123);
+  tileContext.strokeStyle = "rgba(135, 174, 169, 0.22)";
+  tileContext.lineWidth = 1;
+  tileContext.strokeRect(7, 7, 114, 114);
+  const tileTexture = new THREE.CanvasTexture(tileCanvas);
+  tileTexture.colorSpace = THREE.SRGBColorSpace;
+  tileTexture.wrapS = THREE.RepeatWrapping;
+  tileTexture.wrapT = THREE.RepeatWrapping;
+  tileTexture.repeat.set(poolWidth / tileSize, poolDepth / tileSize);
+  tileTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.VSMShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
+  scene.add(new THREE.HemisphereLight(0xd9ecf4, 0x48523a, 1.55));
+  const poolLight = new THREE.DirectionalLight(0xffedcf, 3.2);
+  poolLight.position.set(-8, 16, 10);
+  poolLight.castShadow = true;
+  poolLight.shadow.mapSize.set(1536, 1536);
+  poolLight.shadow.camera.left = -22;
+  poolLight.shadow.camera.right = 22;
+  poolLight.shadow.camera.top = 22;
+  poolLight.shadow.camera.bottom = -22;
+  poolLight.shadow.bias = -0.00015;
   scene.add(poolLight);
 
   const tileMaterial = new THREE.MeshStandardMaterial({
-    color: 0x174354,
-    roughness: 0.68,
-    metalness: 0.12,
+    color: 0xffffff,
+    map: tileTexture,
+    roughness: 0.42,
+    metalness: 0.03,
     side: THREE.DoubleSide,
   });
   const floorGeometry = new THREE.PlaneGeometry(poolWidth, poolDepth);
   floorGeometry.rotateX(-Math.PI / 2);
   const floor = new THREE.Mesh(floorGeometry, tileMaterial);
   floor.position.set(0, poolFloor, (poolBack + poolFront) / 2);
+  floor.receiveShadow = true;
   scene.add(floor);
   disposableResources.push(floorGeometry);
 
@@ -198,6 +265,7 @@
   });
   const backWall = new THREE.Mesh(wallGeometry, wallMaterial);
   backWall.position.set(0, (poolTop + poolFloor) / 2, poolBack);
+  backWall.receiveShadow = true;
   scene.add(backWall);
   const sideWallGeometry = new THREE.PlaneGeometry(poolDepth, poolTop - poolFloor);
   const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
@@ -208,7 +276,7 @@
   rightWall.rotation.y = Math.PI / 2;
   rightWall.position.set(poolWidth / 2, (poolTop + poolFloor) / 2, (poolBack + poolFront) / 2);
   scene.add(rightWall);
-  disposableResources.push(wallGeometry, sideWallGeometry, tileMaterial, wallMaterial);
+  disposableResources.push(wallGeometry, sideWallGeometry, tileMaterial, tileTexture, wallMaterial);
 
   function addTileGrid(plane: "floor" | "back" | "side") {
     const points: number[] = [];
@@ -267,11 +335,563 @@
   const sideRimGeometry = new THREE.BoxGeometry(0.22, 0.22, poolDepth);
   const leftRim = new THREE.Mesh(sideRimGeometry, rimMaterial);
   leftRim.position.set(-poolWidth / 2, poolTop + 0.05, (poolBack + poolFront) / 2);
+  leftRim.castShadow = true;
   scene.add(leftRim);
   const rightRim = new THREE.Mesh(sideRimGeometry, rimMaterial);
   rightRim.position.set(poolWidth / 2, poolTop + 0.05, (poolBack + poolFront) / 2);
+  rightRim.castShadow = true;
   scene.add(rightRim);
   disposableResources.push(rimGeometry, sideRimGeometry, rimMaterial);
+
+  const landSurfaceY = poolTop - 0.06;
+  const landZones = [
+    { minX: -poolWidth / 2, maxX: poolWidth / 2, minZ: poolBack - 5, maxZ: poolBack, width: poolWidth, depth: 5 },
+    { minX: -poolWidth / 2, maxX: poolWidth / 2, minZ: poolFront, maxZ: poolFront + 5, width: poolWidth, depth: 5 },
+    { minX: -poolWidth / 2 - 5, maxX: -poolWidth / 2, minZ: poolBack, maxZ: poolFront, width: 5, depth: poolDepth },
+    { minX: poolWidth / 2, maxX: poolWidth / 2 + 5, minZ: poolBack, maxZ: poolFront, width: 5, depth: poolDepth },
+  ];
+  const barkCanvas = document.createElement("canvas");
+  barkCanvas.width = 256;
+  barkCanvas.height = 256;
+  const barkContext = barkCanvas.getContext("2d");
+  if (!barkContext) throw new Error("The bark texture could not be created.");
+  barkContext.fillStyle = "#66503a";
+  barkContext.fillRect(0, 0, barkCanvas.width, barkCanvas.height);
+  for (let streak = 0; streak < 160; streak++) {
+    barkContext.strokeStyle = Math.random() > 0.5
+      ? "rgba(25, 19, 13, 0.36)"
+      : "rgba(183, 142, 91, 0.23)";
+    barkContext.lineWidth = Math.random() * 2 + 0.4;
+    barkContext.beginPath();
+    barkContext.moveTo(Math.random() * barkCanvas.width, 0);
+    barkContext.bezierCurveTo(
+      Math.random() * barkCanvas.width,
+      barkCanvas.height * 0.32,
+      Math.random() * barkCanvas.width,
+      barkCanvas.height * 0.68,
+      Math.random() * barkCanvas.width,
+      barkCanvas.height,
+    );
+    barkContext.stroke();
+  }
+  const barkTexture = new THREE.CanvasTexture(barkCanvas);
+  barkTexture.colorSpace = THREE.SRGBColorSpace;
+  barkTexture.wrapS = THREE.RepeatWrapping;
+  barkTexture.wrapT = THREE.RepeatWrapping;
+  barkTexture.repeat.set(2, 1);
+
+  const leafCanvas = document.createElement("canvas");
+  leafCanvas.width = 256;
+  leafCanvas.height = 256;
+  const leafContext = leafCanvas.getContext("2d");
+  if (!leafContext) throw new Error("The leaf texture could not be created.");
+  leafContext.fillStyle = "#486b45";
+  leafContext.fillRect(0, 0, leafCanvas.width, leafCanvas.height);
+  for (let leaf = 0; leaf < 2400; leaf++) {
+    const hue = 82 + Math.random() * 38;
+    const lightness = 25 + Math.random() * 28;
+    leafContext.fillStyle = `hsla(${hue}, 28%, ${lightness}%, ${0.32 + Math.random() * 0.42})`;
+    leafContext.beginPath();
+    leafContext.ellipse(
+      Math.random() * leafCanvas.width,
+      Math.random() * leafCanvas.height,
+      1.5 + Math.random() * 3.8,
+      0.8 + Math.random() * 1.5,
+      Math.random() * Math.PI,
+      0,
+      Math.PI * 2,
+    );
+    leafContext.fill();
+  }
+  const leafTexture = new THREE.CanvasTexture(leafCanvas);
+  leafTexture.colorSpace = THREE.SRGBColorSpace;
+  leafTexture.wrapS = THREE.RepeatWrapping;
+  leafTexture.wrapT = THREE.RepeatWrapping;
+
+  const furCanvas = document.createElement("canvas");
+  furCanvas.width = 256;
+  furCanvas.height = 256;
+  const furContext = furCanvas.getContext("2d");
+  if (!furContext) throw new Error("The animal coat texture could not be created.");
+  furContext.fillStyle = "#999999";
+  furContext.fillRect(0, 0, furCanvas.width, furCanvas.height);
+  for (let strand = 0; strand < 3600; strand++) {
+    const shade = Math.floor(90 + Math.random() * 100);
+    furContext.strokeStyle = `rgba(${shade}, ${shade}, ${shade}, ${0.12 + Math.random() * 0.32})`;
+    furContext.lineWidth = Math.random() * 1.2 + 0.3;
+    const x = Math.random() * furCanvas.width;
+    const y = Math.random() * furCanvas.height;
+    furContext.beginPath();
+    furContext.moveTo(x, y);
+    furContext.lineTo(x + THREE.MathUtils.randFloatSpread(4), y + 3 + Math.random() * 8);
+    furContext.stroke();
+  }
+  const furTexture = new THREE.CanvasTexture(furCanvas);
+  furTexture.colorSpace = THREE.SRGBColorSpace;
+  furTexture.wrapS = THREE.RepeatWrapping;
+  furTexture.wrapT = THREE.RepeatWrapping;
+
+  const grassCanvas = document.createElement("canvas");
+  grassCanvas.width = 256;
+  grassCanvas.height = 256;
+  const grassContext = grassCanvas.getContext("2d");
+  if (!grassContext) throw new Error("The shoreline grass texture could not be created.");
+  const grassImage = grassContext.createImageData(grassCanvas.width, grassCanvas.height);
+  for (let index = 0; index < grassImage.data.length; index += 4) {
+    const variation = Math.random() * 38;
+    grassImage.data[index] = 38 + variation * 0.62;
+    grassImage.data[index + 1] = 76 + variation;
+    grassImage.data[index + 2] = 34 + variation * 0.42;
+    grassImage.data[index + 3] = 255;
+  }
+  grassContext.putImageData(grassImage, 0, 0);
+  for (let blade = 0; blade < 1300; blade++) {
+    const x = Math.random() * grassCanvas.width;
+    const y = Math.random() * grassCanvas.height;
+    grassContext.strokeStyle = Math.random() > 0.5
+      ? "rgba(151, 165, 91, 0.16)"
+      : "rgba(21, 49, 28, 0.2)";
+    grassContext.lineWidth = Math.random() * 1.2 + 0.35;
+    grassContext.beginPath();
+    grassContext.moveTo(x, y);
+    grassContext.lineTo(x + THREE.MathUtils.randFloatSpread(3), y - Math.random() * 5);
+    grassContext.stroke();
+  }
+  const grassTexture = new THREE.CanvasTexture(grassCanvas);
+  grassTexture.colorSpace = THREE.SRGBColorSpace;
+  grassTexture.wrapS = THREE.RepeatWrapping;
+  grassTexture.wrapT = THREE.RepeatWrapping;
+  grassTexture.repeat.set(2.5, 2.5);
+  grassTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const grassMaterials = [
+    new THREE.MeshStandardMaterial({ color: 0xa2b48a, map: grassTexture, roughness: 0.98 }),
+    new THREE.MeshStandardMaterial({ color: 0xc3cf9f, map: grassTexture, roughness: 0.98 }),
+    new THREE.MeshStandardMaterial({ color: 0x91a67f, map: grassTexture, roughness: 0.98 }),
+  ];
+  const grassGeometries = landZones.map((zone) => {
+    const { width, depth } = zone;
+    const geometry = new THREE.PlaneGeometry(width, depth, 18, 8);
+    geometry.rotateX(-Math.PI / 2);
+    const positions = geometry.attributes.position;
+    const centerX = (zone.minX + zone.maxX) / 2;
+    const centerZ = (zone.minZ + zone.maxZ) / 2;
+    for (let index = 0; index < positions.count; index++) {
+      const worldX = centerX + positions.getX(index);
+      const worldZ = centerZ + positions.getZ(index);
+      positions.setY(
+        index,
+        Math.sin(worldX * 0.38) * 0.035 +
+          Math.sin(worldZ * 0.43) * 0.035 +
+          Math.sin((worldX + worldZ) * 0.68) * 0.025,
+      );
+    }
+    positions.needsUpdate = true;
+    geometry.computeVertexNormals();
+    return geometry;
+  });
+  landZones.forEach((zone, index) => {
+    const land = new THREE.Mesh(grassGeometries[index], grassMaterials[index % grassMaterials.length]);
+    land.position.set((zone.minX + zone.maxX) / 2, landSurfaceY, (zone.minZ + zone.maxZ) / 2);
+    land.receiveShadow = true;
+    scene.add(land);
+  });
+
+  const treeTrunkGeometry = new THREE.CylinderGeometry(0.13, 0.2, 1.35, 12);
+  const treeBranchGeometry = new THREE.CylinderGeometry(0.045, 0.105, 0.78, 10);
+  const treeLeafGeometries = [
+    new THREE.ConeGeometry(0.94, 1.55, 14),
+    new THREE.SphereGeometry(0.78, 18, 14),
+    new THREE.ConeGeometry(0.68, 1.25, 12),
+  ];
+  const treeTrunkMaterial = new THREE.MeshStandardMaterial({
+    color: 0xb5a18a,
+    map: barkTexture,
+    bumpMap: barkTexture,
+    bumpScale: 0.055,
+    roughness: 0.94,
+  });
+  const treeLeafMaterials = [
+    new THREE.MeshStandardMaterial({ color: 0x9cad88, map: leafTexture, roughness: 0.92 }),
+    new THREE.MeshStandardMaterial({ color: 0xb3c39a, map: leafTexture, roughness: 0.92 }),
+    new THREE.MeshStandardMaterial({ color: 0x849f78, map: leafTexture, roughness: 0.92 }),
+  ];
+  const bushGeometry = new THREE.SphereGeometry(0.55, 16, 12);
+  const bushMaterials = [
+    new THREE.MeshStandardMaterial({ color: 0x789271, map: leafTexture, roughness: 0.94 }),
+    new THREE.MeshStandardMaterial({ color: 0x91a17a, map: leafTexture, roughness: 0.94 }),
+    new THREE.MeshStandardMaterial({ color: 0x6d8964, map: leafTexture, roughness: 0.94 }),
+  ];
+  const grassTuftGeometry = new THREE.BufferGeometry();
+  const grassTuftPositions: number[] = [];
+  for (let blade = 0; blade < 5; blade++) {
+    const angle = blade * Math.PI * 0.4;
+    const x = Math.cos(angle) * 0.12;
+    const z = Math.sin(angle) * 0.12;
+    const tipX = Math.cos(angle) * (0.18 + (blade % 2) * 0.07);
+    const tipZ = Math.sin(angle) * (0.18 + (blade % 2) * 0.07);
+    grassTuftPositions.push(x - 0.035, 0, z, x + 0.035, 0, z, tipX, 0.5 + (blade % 3) * 0.12, tipZ);
+  }
+  grassTuftGeometry.setAttribute("position", new THREE.Float32BufferAttribute(grassTuftPositions, 3));
+  grassTuftGeometry.computeVertexNormals();
+  const grassTuftMaterial = new THREE.MeshStandardMaterial({
+    color: 0x91a65d,
+    roughness: 0.96,
+    side: THREE.DoubleSide,
+  });
+  const groundPlantResources: Array<THREE.BufferGeometry | THREE.Material> = [
+    ...grassGeometries,
+    ...grassMaterials,
+    grassTexture,
+    barkTexture,
+    leafTexture,
+    furTexture,
+    treeTrunkGeometry,
+    ...treeLeafGeometries,
+    treeBranchGeometry,
+    treeTrunkMaterial,
+    ...treeLeafMaterials,
+    bushGeometry,
+    ...bushMaterials,
+    grassTuftGeometry,
+    grassTuftMaterial,
+  ];
+  disposableResources.push(...groundPlantResources);
+  disposableResources.push(environmentTexture);
+  const landObstacles: THREE.Vector3[] = [];
+  const shorelineTrees: THREE.Group[] = [];
+  const shorelineBushes: THREE.Group[] = [];
+  const shorelineGrass: THREE.Mesh[] = [];
+  const treeCount = THREE.MathUtils.randInt(12, 16);
+  const bushCount = THREE.MathUtils.randInt(20, 28);
+  const grassTuftCount = THREE.MathUtils.randInt(48, 72);
+
+  function randomLandPoint(zoneIndex: number, margin = 0.55) {
+    const zone = landZones[zoneIndex];
+    return new THREE.Vector3(
+      THREE.MathUtils.randFloat(zone.minX + margin, zone.maxX - margin),
+      0,
+      THREE.MathUtils.randFloat(zone.minZ + margin, zone.maxZ - margin),
+    );
+  }
+
+  function landHeightAt(x: number, z: number) {
+    return landSurfaceY +
+      Math.sin(x * 0.38) * 0.035 +
+      Math.sin(z * 0.43) * 0.035 +
+      Math.sin((x + z) * 0.68) * 0.025;
+  }
+
+  for (let index = 0; index < treeCount; index++) {
+    const zoneIndex = index % landZones.length;
+    const position = randomLandPoint(zoneIndex, 0.8);
+    const tree = new THREE.Group();
+    const scale = THREE.MathUtils.randFloat(0.72, 1.18);
+    const trunk = new THREE.Mesh(treeTrunkGeometry, treeTrunkMaterial);
+    trunk.position.y = 0.66;
+    tree.add(trunk);
+    for (let branch = 0; branch < 3; branch++) {
+      const limb = new THREE.Mesh(treeBranchGeometry, treeTrunkMaterial);
+      const side = branch % 2 === 0 ? -1 : 1;
+      limb.position.set(side * (0.18 + branch * 0.045), 0.72 + branch * 0.19, branch === 1 ? 0.12 : -0.1);
+      limb.rotation.z = side * 0.92;
+      limb.rotation.x = branch * 0.18;
+      tree.add(limb);
+    }
+
+    if (Math.random() < 0.22) {
+      for (let tier = 0; tier < 4; tier++) {
+        const crown = new THREE.Mesh(
+          treeLeafGeometries[0],
+          treeLeafMaterials[Math.floor(Math.random() * treeLeafMaterials.length)],
+        );
+        crown.position.y = 1.1 + tier * 0.43;
+        crown.scale.setScalar(1 - tier * 0.1);
+        tree.add(crown);
+      }
+    } else {
+      const crownClusters = THREE.MathUtils.randInt(7, 11);
+      for (let cluster = 0; cluster < crownClusters; cluster++) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 0.56;
+        const crown = new THREE.Mesh(
+          treeLeafGeometries[1],
+          treeLeafMaterials[Math.floor(Math.random() * treeLeafMaterials.length)],
+        );
+        crown.position.set(
+          Math.cos(angle) * radius,
+          1.35 + Math.random() * 0.9,
+          Math.sin(angle) * radius,
+        );
+        crown.scale.set(
+          THREE.MathUtils.randFloat(0.48, 0.7),
+          THREE.MathUtils.randFloat(0.43, 0.64),
+          THREE.MathUtils.randFloat(0.48, 0.72),
+        );
+        tree.add(crown);
+      }
+    }
+
+    tree.position.copy(position);
+    tree.position.y = landHeightAt(position.x, position.z);
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    tree.scale.setScalar(scale);
+    tree.traverse((part) => {
+      if (part instanceof THREE.Mesh) {
+        part.castShadow = true;
+        part.receiveShadow = true;
+      }
+    });
+    scene.add(tree);
+    shorelineTrees.push(tree);
+    landObstacles.push(position.clone());
+  }
+
+  for (let index = 0; index < bushCount; index++) {
+    const zoneIndex = index % landZones.length;
+    const position = randomLandPoint(zoneIndex);
+    const bush = new THREE.Group();
+    const material = bushMaterials[Math.floor(Math.random() * bushMaterials.length)];
+    for (let cluster = 0; cluster < 3; cluster++) {
+      const leaf = new THREE.Mesh(bushGeometry, material);
+      leaf.position.set(
+        (cluster - 1) * 0.35,
+        0.28 + (cluster % 2) * 0.12,
+        cluster === 1 ? 0.12 : -0.08,
+      );
+      leaf.scale.set(
+        THREE.MathUtils.randFloat(0.62, 0.85),
+        THREE.MathUtils.randFloat(0.55, 0.76),
+        THREE.MathUtils.randFloat(0.62, 0.82),
+      );
+      bush.add(leaf);
+    }
+    bush.position.copy(position);
+    bush.position.y = landHeightAt(position.x, position.z);
+    bush.rotation.y = Math.random() * Math.PI * 2;
+    bush.traverse((part) => {
+      if (part instanceof THREE.Mesh) {
+        part.castShadow = true;
+        part.receiveShadow = true;
+      }
+    });
+    scene.add(bush);
+    shorelineBushes.push(bush);
+    landObstacles.push(position.clone());
+  }
+
+  for (let index = 0; index < grassTuftCount; index++) {
+    const zoneIndex = index % landZones.length;
+    const position = randomLandPoint(zoneIndex, 0.25);
+    const tuft = new THREE.Mesh(grassTuftGeometry, grassTuftMaterial);
+    tuft.position.copy(position);
+    tuft.position.y = landHeightAt(position.x, position.z) + 0.015;
+    tuft.rotation.y = Math.random() * Math.PI * 2;
+    tuft.scale.setScalar(THREE.MathUtils.randFloat(0.55, 1.15));
+    tuft.castShadow = true;
+    scene.add(tuft);
+    shorelineGrass.push(tuft);
+  }
+
+  type LandAnimalAgent = {
+    root: THREE.Group;
+    species: string;
+    zoneIndex: number;
+    target: THREE.Vector3;
+    legs: THREE.Group[];
+    phase: number;
+    speed: number;
+    pause: number;
+  };
+  const landAnimalAgents: LandAnimalAgent[] = [];
+  const landAnimalTypes = [
+    { name: "rabbit", coat: 0x9b8060, light: 0xd2c29f, ear: 0x9c5e59, scale: 0.76 },
+    { name: "fox", coat: 0xb45f32, light: 0xe7bd87, ear: 0x6a3e34, scale: 0.82 },
+    { name: "deer", coat: 0x94714c, light: 0xcdb58b, ear: 0x664a36, scale: 0.9 },
+    { name: "squirrel", coat: 0x885738, light: 0xd1a66d, ear: 0x794b3a, scale: 0.68 },
+  ];
+  const animalBodyGeometry = new THREE.SphereGeometry(1, 24, 16);
+  const animalHeadGeometry = new THREE.SphereGeometry(1, 20, 14);
+  const animalLegGeometry = new THREE.CylinderGeometry(0.055, 0.075, 0.42, 10);
+  const animalAntlerGeometry = new THREE.CylinderGeometry(0.018, 0.04, 0.42, 8);
+  const animalAntlerTipGeometry = new THREE.CylinderGeometry(0.012, 0.027, 0.27, 8);
+  const animalEarGeometry = new THREE.SphereGeometry(1, 14, 10);
+  const animalTailGeometry = new THREE.SphereGeometry(1, 16, 12);
+  const animalNoseGeometry = new THREE.SphereGeometry(0.075, 12, 8);
+  const animalEyeGeometry = new THREE.SphereGeometry(0.035, 12, 10);
+  const animalCoatMaterials = landAnimalTypes.map(({ coat }) => new THREE.MeshStandardMaterial({
+    color: coat,
+    map: furTexture,
+    bumpMap: furTexture,
+    bumpScale: 0.018,
+    roughness: 0.91,
+  }));
+  const animalLightMaterials = landAnimalTypes.map(({ light }) => new THREE.MeshStandardMaterial({
+    color: light,
+    map: furTexture,
+    bumpMap: furTexture,
+    bumpScale: 0.015,
+    roughness: 0.88,
+  }));
+  const animalEarMaterials = landAnimalTypes.map(({ ear }) => new THREE.MeshStandardMaterial({
+    color: ear,
+    roughness: 0.9,
+  }));
+  const animalEyeMaterial = new THREE.MeshStandardMaterial({ color: 0x191510, roughness: 0.28 });
+  const animalResources: Array<THREE.BufferGeometry | THREE.Material> = [
+    animalBodyGeometry,
+    animalHeadGeometry,
+    animalLegGeometry,
+    animalAntlerGeometry,
+    animalAntlerTipGeometry,
+    animalEarGeometry,
+    animalTailGeometry,
+    animalNoseGeometry,
+    animalEyeGeometry,
+    ...animalCoatMaterials,
+    ...animalLightMaterials,
+    ...animalEarMaterials,
+    animalEyeMaterial,
+  ];
+  disposableResources.push(...animalResources);
+
+  function randomAnimalPoint(zoneIndex: number) {
+    let position = randomLandPoint(zoneIndex, 0.9);
+    for (let attempt = 0; attempt < 28; attempt++) {
+      position = randomLandPoint(zoneIndex, 0.9);
+      if (landObstacles.every((obstacle) => obstacle.distanceTo(position) > 1.2)) break;
+    }
+    return position;
+  }
+
+  function addAnimalPart(
+    root: THREE.Group,
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    position: [number, number, number],
+    scale: [number, number, number],
+  ) {
+    const part = new THREE.Mesh(geometry, material);
+    part.position.set(...position);
+    part.scale.set(...scale);
+    part.castShadow = true;
+    part.receiveShadow = true;
+    root.add(part);
+    return part;
+  }
+
+  for (let zoneIndex = 0; zoneIndex < landZones.length; zoneIndex++) {
+    const animalType = landAnimalTypes[Math.floor(Math.random() * landAnimalTypes.length)];
+    const typeIndex = landAnimalTypes.indexOf(animalType);
+    const root = new THREE.Group();
+    const coat = animalCoatMaterials[typeIndex];
+    const lightCoat = animalLightMaterials[typeIndex];
+    const animalScale = animalType.scale * THREE.MathUtils.randFloat(0.9, 1.12);
+    const body = addAnimalPart(root, animalBodyGeometry, coat, [0, 0.48, 0.02], [0.42, 0.37, 0.72]);
+    addAnimalPart(root, animalHeadGeometry, coat, [0, 0.72, -0.46], [0.27, 0.29, 0.28]);
+    addAnimalPart(root, animalHeadGeometry, lightCoat, [0, 0.62, -0.69], [0.16, 0.12, 0.2]);
+    addAnimalPart(root, animalNoseGeometry, animalEarMaterials[typeIndex], [0, 0.69, -0.85], [0.8, 0.66, 0.8]);
+    for (const side of [-1, 1]) {
+      addAnimalPart(
+        root,
+        animalEyeGeometry,
+        animalEyeMaterial,
+        [side * 0.22, 0.79, -0.61],
+        [1, 1, 0.75],
+      );
+    }
+
+    if (animalType.name === "rabbit") {
+      for (const side of [-1, 1]) {
+        addAnimalPart(
+          root,
+          animalEarGeometry,
+          animalCoatMaterials[typeIndex],
+          [side * 0.13, 1.05, -0.43],
+          [0.09, 0.33, 0.12],
+        ).rotation.z = side * -0.16;
+        addAnimalPart(
+          root,
+          animalEarGeometry,
+          animalEarMaterials[typeIndex],
+          [side * 0.13, 1.06, -0.45],
+          [0.047, 0.24, 0.065],
+        );
+      }
+    } else if (animalType.name === "deer") {
+      addAnimalPart(root, animalBodyGeometry, coat, [0, 0.69, -0.3], [0.19, 0.34, 0.2]);
+      for (const side of [-1, 1]) {
+        addAnimalPart(
+          root,
+          animalEarGeometry,
+          lightCoat,
+          [side * 0.28, 0.84, -0.39],
+          [0.2, 0.075, 0.11],
+        ).rotation.z = side * 0.35;
+        const antler = new THREE.Group();
+        antler.position.set(side * 0.13, 0.88, -0.43);
+        antler.rotation.z = -side * 0.24;
+        addAnimalPart(antler, animalAntlerGeometry, animalEarMaterials[typeIndex], [side * 0.035, 0.19, 0], [1, 1, 1]);
+        for (let tine = 0; tine < 2; tine++) {
+          const branch = addAnimalPart(
+            antler,
+            animalAntlerTipGeometry,
+            animalEarMaterials[typeIndex],
+            [side * (0.1 + tine * 0.025), 0.26 + tine * 0.12, 0],
+            [1, 1, 1],
+          );
+          branch.rotation.z = -side * 0.62;
+        }
+        root.add(antler);
+      }
+    } else if (animalType.name === "fox") {
+      addAnimalPart(root, animalTailGeometry, lightCoat, [0, 0.48, 0.77], [0.25, 0.23, 0.52])
+        .rotation.x = -0.35;
+    } else {
+      addAnimalPart(root, animalTailGeometry, coat, [0, 0.49, 0.77], [0.2, 0.22, 0.43])
+        .rotation.x = -0.55;
+      for (const side of [-1, 1]) {
+        addAnimalPart(
+          root,
+          animalEarGeometry,
+          coat,
+          [side * 0.2, 0.91, -0.48],
+          [0.11, 0.12, 0.1],
+        );
+      }
+    }
+
+    const legs: THREE.Group[] = [];
+    for (const side of [-1, 1]) {
+      for (const along of [-1, 1]) {
+        const leg = new THREE.Group();
+        leg.position.set(side * 0.25, 0.31, along * 0.42);
+        addAnimalPart(leg, animalLegGeometry, coat, [0, -0.04, 0], [1, 1, 1]);
+        root.add(leg);
+        legs.push(leg);
+      }
+    }
+    root.scale.setScalar(animalScale);
+    const position = randomAnimalPoint(zoneIndex);
+    root.position.set(position.x, landHeightAt(position.x, position.z), position.z);
+    root.traverse((part) => {
+      if (part instanceof THREE.Mesh) {
+        part.castShadow = true;
+        part.receiveShadow = true;
+      }
+    });
+    scene.add(root);
+    landAnimalAgents.push({
+      root,
+      species: animalType.name,
+      zoneIndex,
+      target: randomAnimalPoint(zoneIndex),
+      legs,
+      phase: Math.random() * Math.PI * 2,
+      speed: THREE.MathUtils.randFloat(0.3, 0.55),
+      pause: Math.random() * 2,
+    });
+    body.castShadow = true;
+  }
 
   const sphereGeometry = new THREE.SphereGeometry(1.3, 48, 32);
   const sphereMaterial = new THREE.MeshStandardMaterial({
@@ -281,6 +901,7 @@
   });
   const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
   sphere.position.set(-0.6, 0.82, -1.2);
+  sphere.castShadow = true;
   scene.add(sphere);
   disposableResources.push(sphereGeometry, sphereMaterial);
   const sphereRadius = 1.3;
@@ -360,6 +981,9 @@
   duckFeet.push(rightFoot);
   duckGeometries.push(footGeometry);
   duck.position.set(3.1, 0, -4.4);
+  duck.traverse((part) => {
+    if (part instanceof THREE.Mesh) part.castShadow = true;
+  });
   scene.add(duck);
   disposableResources.push(
     ...duckGeometries,
@@ -458,6 +1082,9 @@
   sailboat.position.set(4.8, 0, 2.2);
   sailboat.scale.setScalar(1.15);
   sailboat.rotation.y = -0.35;
+  sailboat.traverse((part) => {
+    if (part instanceof THREE.Mesh) part.castShadow = true;
+  });
   scene.add(sailboat);
   disposableResources.push(
     hullGeometry,
@@ -502,6 +1129,7 @@
     archetype: FishArchetype;
     phase: number;
     maxSpeed: number;
+    jumping: boolean;
   };
   const fishArchetypes: FishArchetype[] = [
     { name: "trout", bodyDepth: 0.72, bodyLength: 1.15, tailFork: 0.18, dorsalHeight: 0.28, finSpan: 0.3 },
@@ -541,6 +1169,7 @@
   const fishResourceMaterials: THREE.Material[] = [];
   const fishResourceGeometries: THREE.BufferGeometry[] = [];
   const fishCount = THREE.MathUtils.randInt(7, 11);
+  let fishJumpTimer = THREE.MathUtils.randFloat(20, 42);
 
   function makeFinGeometry(points: Array<[number, number, number]>) {
     const positions = [0, 0, 0, ...points.flat()];
@@ -622,14 +1251,14 @@
       roughness: 0.58,
       metalness: 0.03,
       emissive: palette.base,
-      emissiveIntensity: 0.38,
+      emissiveIntensity: 0.06,
       side: THREE.DoubleSide,
     });
     const finMaterial = new THREE.MeshStandardMaterial({
       color: palette.base,
       roughness: 0.62,
       emissive: palette.base,
-      emissiveIntensity: 0.24,
+      emissiveIntensity: 0.04,
       side: THREE.DoubleSide,
     });
     const paleFinMaterial = new THREE.MeshStandardMaterial({
@@ -732,6 +1361,7 @@
       archetype,
       phase: Math.random() * Math.PI * 2 + index,
       maxSpeed: THREE.MathUtils.randFloat(0.42, 0.78),
+      jumping: false,
     } satisfies FishAgent;
   }
 
@@ -741,10 +1371,137 @@
   }
   disposableResources.push(...fishResourceGeometries, ...fishResourceMaterials);
   const fishTypeSummary = fishAgents.map((fish) => fish.root.userData.fishType).join(", ");
-  canvas.setAttribute(
-    "aria-label",
-    `Three-dimensional tiled pool with a steerable sailboat, a school of ${fishCount} randomly generated fish (${fishTypeSummary}), an independently moving mallard and draggable sphere. Use the arrow keys to sail, drag open water to orbit the camera, or click the water to make a ripple.`,
-  );
+  let visibleTreeCount = treeCount;
+  let visibleBushCount = bushCount;
+
+  function updateCanvasDescription() {
+    canvas.setAttribute(
+      "aria-label",
+      `Three-dimensional tiled pool surrounded by randomized grassy banks with ${visibleTreeCount} trees, ${visibleBushCount} bushes, and four wandering land animals (${landAnimalAgents.map((animal) => animal.species).join(", ")}). The pool has a steerable sailboat, a school of ${fishCount} randomly generated fish (${fishTypeSummary}), an independently moving mallard, and a draggable sphere. Use the arrow keys to sail, drag open water to orbit the camera, or click the water to make a ripple.`,
+    );
+  }
+
+  updateCanvasDescription();
+
+  function trackModelResources(root: THREE.Object3D) {
+    root.traverse((part) => {
+      if (!(part instanceof THREE.Mesh)) return;
+      disposableResources.push(part.geometry);
+      part.castShadow = true;
+      part.receiveShadow = true;
+      const materials = Array.isArray(part.material) ? part.material : [part.material];
+      for (const material of materials) {
+        disposableResources.push(material);
+        for (const value of Object.values(material)) {
+          if (value instanceof THREE.Texture) disposableResources.push(value);
+        }
+      }
+    });
+  }
+
+  function createLandscapeInstance(
+    source: THREE.Object3D,
+    position: THREE.Vector3,
+    targetHeight: number,
+    rotation: number,
+  ) {
+    const model = source.clone(true);
+    model.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(model);
+    const size = bounds.getSize(new THREE.Vector3());
+    if (size.y <= 0) throw new Error("A downloaded landscape model has no measurable height.");
+    const scale = targetHeight / size.y;
+    const minimum = bounds.min.clone();
+    model.scale.setScalar(scale);
+    model.position.set(-minimum.x * scale, -minimum.y * scale, -minimum.z * scale);
+
+    const instance = new THREE.Group();
+    instance.add(model);
+    instance.position.set(position.x, landHeightAt(position.x, position.z), position.z);
+    instance.rotation.y = rotation;
+    return instance;
+  }
+
+  async function loadLandscapeAssets() {
+    const loader = new GLTFLoader();
+    const results = await Promise.allSettled([
+      new HDRLoader().loadAsync("/assets/polyhaven/hdri/autumn_field_puresky_1k.hdr"),
+      loader.loadAsync("/assets/polyhaven/models/quiver_tree_01/quiver_tree_01_1k.gltf"),
+      loader.loadAsync("/assets/polyhaven/models/shrub_02/shrub_02_1k.gltf"),
+      loader.loadAsync("/assets/polyhaven/models/shrub_03/shrub_03_1k.gltf"),
+      loader.loadAsync("/assets/polyhaven/models/shrub_04/shrub_04_1k.gltf"),
+    ] as const);
+    const failures: unknown[] = [];
+
+    const [environmentResult, treeResult, ...shrubResults] = results;
+    if (environmentResult.status === "fulfilled") {
+      const environment = environmentResult.value;
+      environment.mapping = THREE.EquirectangularReflectionMapping;
+      scene.environment = environment;
+      scene.background = environment;
+      scene.backgroundBlurriness = 0.12;
+      disposableResources.push(environment);
+    } else {
+      failures.push(environmentResult.reason);
+    }
+
+    if (treeResult.status === "fulfilled") {
+      const treeSource = treeResult.value.scene;
+      trackModelResources(treeSource);
+      const placements = shorelineTrees.map((tree) => ({
+        position: tree.position.clone(),
+        rotation: tree.rotation.y,
+        height: THREE.MathUtils.randFloat(3.2, 5.2),
+      }));
+      for (const tree of shorelineTrees) scene.remove(tree);
+      shorelineTrees.splice(0, shorelineTrees.length);
+      for (const placement of placements) {
+        const tree = createLandscapeInstance(treeSource, placement.position, placement.height, placement.rotation);
+        scene.add(tree);
+        shorelineTrees.push(tree);
+      }
+    } else {
+      failures.push(treeResult.reason);
+    }
+
+    const shrubModels = shrubResults.flatMap((result) => {
+      if (result.status === "rejected") {
+        failures.push(result.reason);
+        return [];
+      }
+      trackModelResources(result.value.scene);
+      return [result.value.scene];
+    });
+    if (shrubModels.length > 0) {
+      for (const bush of shorelineBushes) scene.remove(bush);
+      shorelineBushes.splice(0, shorelineBushes.length);
+      for (let index = 0; index < bushCount; index++) {
+        const position = randomLandPoint(index % landZones.length);
+        const source = shrubModels[Math.floor(Math.random() * shrubModels.length)];
+        const bush = createLandscapeInstance(
+          source,
+          position,
+          THREE.MathUtils.randFloat(0.65, 1.35),
+          Math.random() * Math.PI * 2,
+        );
+        scene.add(bush);
+        shorelineBushes.push(bush);
+      }
+      visibleBushCount = shorelineBushes.length;
+    }
+
+    visibleTreeCount = shorelineTrees.length;
+    updateCanvasDescription();
+    if (failures.length > 0) {
+      console.error("Some CC0 landscape assets could not be loaded; generated scenery remains as a fallback.", failures);
+      hint.textContent = "Some detailed landscape assets couldn't load; generated scenery is still active. " + hint.textContent;
+    }
+  }
+
+  void loadLandscapeAssets().catch((error: unknown) => {
+    console.error("The CC0 landscape assets could not be loaded; generated scenery remains active.", error);
+    hint.textContent = "Detailed landscape assets couldn't load; generated scenery is still active. " + hint.textContent;
+  });
 
   const sunDirection = new THREE.Vector3(-0.46, 0.42, -0.65).normalize();
   const waterSegments = 128;
@@ -760,9 +1517,9 @@
     textureHeight: 512,
     waterNormals: normalTexture,
     sunDirection,
-    sunColor: 0xa9edff,
-    waterColor: 0x0786a0,
-    distortionScale: 4.2,
+    sunColor: 0xffe6bd,
+    waterColor: 0x174d55,
+    distortionScale: 2.8,
     size: waveScale,
     clipBias: 0.002,
     alpha: 0.84,
@@ -1155,6 +1912,48 @@
     }
   }
 
+  function updateShoreline(delta: number) {
+    for (let index = 0; index < shorelineTrees.length; index++) {
+      shorelineTrees[index].rotation.z = Math.sin(elapsed * 0.62 + index * 1.7) * (0.008 + wind * 0.02);
+    }
+    for (let index = 0; index < shorelineGrass.length; index++) {
+      shorelineGrass[index].rotation.z =
+        Math.sin(elapsed * 2.4 + index * 2.1) * (0.025 + wind * 0.065);
+    }
+
+    for (const animal of landAnimalAgents) {
+      const { root, legs, target, phase, speed } = animal;
+      const dx = target.x - root.position.x;
+      const dz = target.z - root.position.z;
+      const distance = Math.hypot(dx, dz);
+
+      if (distance < 0.2) {
+        animal.target.copy(randomAnimalPoint(animal.zoneIndex));
+        animal.pause = THREE.MathUtils.randFloat(1.1, 3.8);
+      }
+
+      if (animal.pause > 0) {
+        animal.pause = Math.max(0, animal.pause - delta);
+        root.rotation.x = Math.sin(elapsed * 1.5 + phase) * 0.012;
+        continue;
+      }
+
+      const step = Math.min(speed * delta, distance);
+      if (distance > 0.001) {
+        root.position.x += (dx / distance) * step;
+        root.position.z += (dz / distance) * step;
+        root.rotation.y = THREE.MathUtils.damp(root.rotation.y, Math.atan2(dx, -dz), 2.4, delta);
+      }
+      root.position.y = landHeightAt(root.position.x, root.position.z);
+      root.rotation.x = Math.sin(elapsed * 7 + phase) * Math.min(step * 0.08, 0.025);
+      const gait = Math.sin(elapsed * 9 + phase) * Math.min(speed * 0.8, 0.45);
+      legs[0].rotation.x = gait;
+      legs[1].rotation.x = -gait;
+      legs[2].rotation.x = -gait;
+      legs[3].rotation.x = gait;
+    }
+  }
+
   function resolveWaterCollision(
     firstPosition: THREE.Vector3,
     firstVelocity: THREE.Vector3,
@@ -1286,9 +2085,41 @@
   const fishAvoidance = new THREE.Vector3();
 
   function updateFish(delta: number) {
+    fishJumpTimer -= delta;
+    if (fishJumpTimer <= 0 && !fishAgents.some((fish) => fish.jumping)) {
+      const candidates = fishAgents.filter((fish) => fish.position.y > -2.1);
+      if (candidates.length > 0) {
+        const fish = candidates[Math.floor(Math.random() * candidates.length)];
+        const waterHeight = sampleWaveHeight(fish.position.x, fish.position.z);
+        fish.position.y = Math.min(fish.position.y, waterHeight - 0.08);
+        fish.velocity.y = Math.sqrt(2 * 9.8 * (waterHeight + THREE.MathUtils.randFloat(0.4, 0.8) - fish.position.y));
+        fish.jumping = true;
+        fishJumpTimer = THREE.MathUtils.randFloat(24, 48);
+      } else {
+        fishJumpTimer = 5;
+      }
+    }
+
     for (let index = 0; index < fishAgents.length; index++) {
       const fish = fishAgents[index];
       const { position, velocity, maxSpeed, phase } = fish;
+      let horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+      if (fish.jumping) {
+        velocity.y -= 9.8 * delta;
+        position.addScaledVector(velocity, delta);
+        position.x = clamp(position.x, -poolWidth / 2 + 0.85, poolWidth / 2 - 0.85);
+        position.z = clamp(position.z, poolBack + 0.85, poolFront - 0.85);
+        const waterHeight = sampleWaveHeight(position.x, position.z);
+        if (velocity.y < 0 && position.y <= waterHeight) {
+          position.y = waterHeight - 0.18;
+          velocity.y = 0;
+          fish.jumping = false;
+          rippleAtWorld(position.x, position.z, THREE.MathUtils.randFloat(0.38, 0.66), false);
+        }
+        fish.root.position.copy(position);
+        horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+        fish.root.rotation.x = -Math.atan2(velocity.y, Math.max(horizontalSpeed, 0.01));
+      } else {
       fishDesired.set(
         Math.sin(elapsed * 0.23 + phase) * 0.55 + Math.cos(elapsed * 0.11 + phase) * 0.28,
         Math.sin(elapsed * 0.19 + phase * 1.7) * 0.12,
@@ -1357,7 +2188,7 @@
       position.z = clamp(position.z, minZ, maxZ);
       fish.root.position.copy(position);
 
-      const horizontalSpeed = Math.hypot(velocity.x, velocity.z);
+      horizontalSpeed = Math.hypot(velocity.x, velocity.z);
       if (horizontalSpeed > 0.015) {
         fish.root.rotation.y = THREE.MathUtils.damp(
           fish.root.rotation.y,
@@ -1374,6 +2205,7 @@
       );
       fish.root.rotation.z = Math.sin(elapsed * 2.4 + phase) * 0.025 +
         THREE.MathUtils.clamp(-velocity.x * 0.08, -0.06, 0.06);
+      }
 
       const swimFactor = Math.min(horizontalSpeed / maxSpeed, 1);
       const stroke = Math.sin(elapsed * (7.5 + maxSpeed * 2) + phase) * (0.12 + swimFactor * 0.42);
@@ -1625,6 +2457,7 @@
     makeWindRipple();
     updateWaves();
     updateWaterSurface();
+    updateShoreline(delta);
     updateSailboat(delta);
     updateFloatingSphere(delta);
     updateDuck(delta);

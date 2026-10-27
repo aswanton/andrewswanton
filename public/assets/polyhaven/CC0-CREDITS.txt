@@ -1,0 +1,10 @@
+These assets are provided by Poly Haven under the CC0 license:
+https://polyhaven.com/license
+
+- autumn_field_puresky (HDRI environment)
+- quiver_tree_01 (tree model)
+- shrub_02 (shrub model)
+- shrub_03 (shrub model)
+- shrub_04 (shrub model)
+
+Poly Haven: https://polyhaven.com
