@@ -198,31 +198,23 @@
   const poolFront = poolBack + poolDepth;
   const poolFloor = -3.4;
   const poolTop = 1.15;
-  const tileSize = 0.55;
-
   const tileCanvas = document.createElement("canvas");
-  tileCanvas.width = 128;
-  tileCanvas.height = 128;
+  tileCanvas.width = 512;
+  tileCanvas.height = 512;
   const tileContext = tileCanvas.getContext("2d");
   if (!tileContext) throw new Error("The pool tile texture could not be created.");
-  tileContext.fillStyle = "#39727a";
+  tileContext.fillStyle = "#456c70";
   tileContext.fillRect(0, 0, tileCanvas.width, tileCanvas.height);
-  for (let fleck = 0; fleck < 1100; fleck++) {
+  for (let fleck = 0; fleck < 6500; fleck++) {
     const brightness = Math.floor(72 + Math.random() * 70);
     tileContext.fillStyle = `rgba(${brightness}, ${brightness + 18}, ${brightness + 20}, ${Math.random() * 0.22})`;
-    tileContext.fillRect(Math.random() * 128, Math.random() * 128, 1 + Math.random() * 2, 1 + Math.random() * 2);
+    tileContext.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 2, 1 + Math.random() * 2);
   }
-  tileContext.strokeStyle = "rgba(12, 42, 48, 0.9)";
-  tileContext.lineWidth = 5;
-  tileContext.strokeRect(2.5, 2.5, 123, 123);
-  tileContext.strokeStyle = "rgba(135, 174, 169, 0.22)";
-  tileContext.lineWidth = 1;
-  tileContext.strokeRect(7, 7, 114, 114);
   const tileTexture = new THREE.CanvasTexture(tileCanvas);
   tileTexture.colorSpace = THREE.SRGBColorSpace;
   tileTexture.wrapS = THREE.RepeatWrapping;
   tileTexture.wrapT = THREE.RepeatWrapping;
-  tileTexture.repeat.set(poolWidth / tileSize, poolDepth / tileSize);
+  tileTexture.repeat.set(4, 4);
   tileTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
   renderer.shadowMap.enabled = true;
@@ -277,55 +269,6 @@
   rightWall.position.set(poolWidth / 2, (poolTop + poolFloor) / 2, (poolBack + poolFront) / 2);
   scene.add(rightWall);
   disposableResources.push(wallGeometry, sideWallGeometry, tileMaterial, tileTexture, wallMaterial);
-
-  function addTileGrid(plane: "floor" | "back" | "side") {
-    const points: number[] = [];
-
-    function segment(ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
-      points.push(ax, ay, az, bx, by, bz);
-    }
-
-    if (plane === "floor") {
-      for (let x = -poolWidth / 2; x <= poolWidth / 2 + 0.001; x += tileSize) {
-        segment(x, poolFloor + 0.012, poolBack + 0.012, x, poolFloor + 0.012, poolFront - 0.012);
-      }
-      for (let z = poolBack; z <= poolFront + 0.001; z += tileSize) {
-        segment(-poolWidth / 2 + 0.012, poolFloor + 0.012, z, poolWidth / 2 - 0.012, poolFloor + 0.012, z);
-      }
-    } else if (plane === "back") {
-      for (let x = -poolWidth / 2; x <= poolWidth / 2 + 0.001; x += tileSize) {
-        segment(x, poolFloor, poolBack + 0.012, x, poolTop, poolBack + 0.012);
-      }
-      for (let y = poolFloor; y <= poolTop + 0.001; y += tileSize) {
-        segment(-poolWidth / 2, y, poolBack + 0.012, poolWidth / 2, y, poolBack + 0.012);
-      }
-    } else {
-      for (const x of [-poolWidth / 2, poolWidth / 2]) {
-        for (let z = poolBack; z <= poolFront + 0.001; z += tileSize) {
-          segment(x - Math.sign(x) * 0.012, poolFloor, z, x - Math.sign(x) * 0.012, poolTop, z);
-        }
-        for (let y = poolFloor; y <= poolTop + 0.001; y += tileSize) {
-          segment(x - Math.sign(x) * 0.012, y, poolBack, x - Math.sign(x) * 0.012, y, poolFront);
-        }
-      }
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
-    const material = new THREE.LineBasicMaterial({
-      color: plane === "floor" ? 0x071d25 : 0x101e24,
-      transparent: true,
-      opacity: 0.74,
-    });
-    const grid = new THREE.LineSegments(geometry, material);
-    grid.renderOrder = 1;
-    scene.add(grid);
-    disposableResources.push(geometry, material);
-  }
-
-  addTileGrid("floor");
-  addTileGrid("back");
-  addTileGrid("side");
 
   const rimMaterial = new THREE.MeshStandardMaterial({ color: 0x697b80, roughness: 0.58, metalness: 0.16 });
   const rimGeometry = new THREE.BoxGeometry(poolWidth + 0.45, 0.22, 0.22);
@@ -700,6 +643,8 @@
     legs: THREE.Group[];
     phase: number;
     speed: number;
+    currentSpeed: number;
+    gaitPhase: number;
     pause: number;
   };
   const landAnimalAgents: LandAnimalAgent[] = [];
@@ -888,6 +833,8 @@
       legs,
       phase: Math.random() * Math.PI * 2,
       speed: THREE.MathUtils.randFloat(0.3, 0.55),
+      currentSpeed: 0,
+      gaitPhase: Math.random() * Math.PI * 2,
       pause: Math.random() * 2,
     });
     body.castShadow = true;
@@ -1578,6 +1525,10 @@
 
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
   const wrapUnit = (value: number) => ((value % 1) + 1) % 1;
+  function turnToward(current: number, target: number, maxStep: number) {
+    const difference = Math.atan2(Math.sin(target - current), Math.cos(target - current));
+    return current + clamp(difference, -maxStep, maxStep);
+  }
   const rippleRadius = 4;
   const rippleKernel: Array<{ column: number; row: number; positive: number; balancing: number }> = [];
   let positiveRippleWeight = 0;
@@ -1800,15 +1751,15 @@
       }
     }
 
-    const acceleration = duckBehavior === "cruise" ? 0.85 : duckBehavior === "dabble" ? 0.4 : 0.55;
-    duckVelocityX = THREE.MathUtils.damp(duckVelocityX, desiredX, acceleration, delta);
-    duckVelocityZ = THREE.MathUtils.damp(duckVelocityZ, desiredZ, acceleration, delta);
-    const velocity = Math.hypot(duckVelocityX, duckVelocityZ);
+    const desiredSpeed = Math.hypot(desiredX, desiredZ);
     const speedLimit = duckBehavior === "cruise" ? 0.72 : 0.22;
-    if (velocity > speedLimit) {
-      duckVelocityX = (duckVelocityX / velocity) * speedLimit;
-      duckVelocityZ = (duckVelocityZ / velocity) * speedLimit;
+    const targetSpeed = Math.min(desiredSpeed, speedLimit);
+    if (desiredSpeed > 0.025) {
+      duck.rotation.y = turnToward(duck.rotation.y, Math.atan2(desiredX, -desiredZ), 1.15 * delta);
     }
+    const velocity = THREE.MathUtils.damp(currentSpeed, targetSpeed, duckBehavior === "cruise" ? 0.85 : 0.55, delta);
+    duckVelocityX = Math.sin(duck.rotation.y) * velocity;
+    duckVelocityZ = -Math.cos(duck.rotation.y) * velocity;
 
     duck.position.x += duckVelocityX * delta;
     duck.position.z += duckVelocityZ * delta;
@@ -1818,16 +1769,14 @@
     const maxZ = poolFront - 1.2;
     if (duck.position.x < minX || duck.position.x > maxX) {
       duck.position.x = clamp(duck.position.x, minX, maxX);
-      duckVelocityX *= -0.2;
+      duckVelocityX = 0;
       duckBehaviorTimer = 0;
     }
     if (duck.position.z < minZ || duck.position.z > maxZ) {
       duck.position.z = clamp(duck.position.z, minZ, maxZ);
-      duckVelocityZ *= -0.2;
+      duckVelocityZ = 0;
       duckBehaviorTimer = 0;
     }
-    const heading = Math.atan2(duckVelocityX, -duckVelocityZ);
-    if (velocity > 0.03) duck.rotation.y = THREE.MathUtils.damp(duck.rotation.y, heading, 1.8, delta);
     duckHeadDip = THREE.MathUtils.damp(duckHeadDip, duckBehavior === "dabble" ? 1 : 0, 1.7, delta);
     duck.position.y = sampleWaveHeight(duck.position.x, duck.position.z) + 0.035 +
       Math.sin(elapsed * 1.7 + duck.position.x) * 0.022 +
@@ -1914,7 +1863,14 @@
 
   function updateShoreline(delta: number) {
     for (let index = 0; index < shorelineTrees.length; index++) {
-      shorelineTrees[index].rotation.z = Math.sin(elapsed * 0.62 + index * 1.7) * (0.008 + wind * 0.02);
+      const gust = Math.sin(elapsed * 0.72 + index * 1.7);
+      shorelineTrees[index].rotation.z = gust * (0.003 + wind * 0.075);
+      shorelineTrees[index].rotation.x = Math.sin(elapsed * 0.54 + index * 2.3) * wind * 0.018;
+    }
+    for (let index = 0; index < shorelineBushes.length; index++) {
+      const gust = Math.sin(elapsed * 1.15 + index * 2.1);
+      shorelineBushes[index].rotation.z = gust * (0.006 + wind * 0.12);
+      shorelineBushes[index].rotation.x = Math.sin(elapsed * 0.9 + index * 1.4) * wind * 0.035;
     }
     for (let index = 0; index < shorelineGrass.length; index++) {
       shorelineGrass[index].rotation.z =
@@ -1934,19 +1890,40 @@
 
       if (animal.pause > 0) {
         animal.pause = Math.max(0, animal.pause - delta);
-        root.rotation.x = Math.sin(elapsed * 1.5 + phase) * 0.012;
+        animal.currentSpeed = THREE.MathUtils.damp(animal.currentSpeed, 0, 2.2, delta);
+        root.position.y = landHeightAt(root.position.x, root.position.z);
+        root.rotation.x = Math.sin(elapsed * 1.5 + phase) * 0.01;
+        for (const leg of legs) {
+          leg.rotation.x = THREE.MathUtils.damp(leg.rotation.x, 0, 5, delta);
+        }
         continue;
       }
 
-      const step = Math.min(speed * delta, distance);
+      const desiredHeading = Math.atan2(-dx, -dz);
+      const headingDifference = Math.atan2(
+        Math.sin(desiredHeading - root.rotation.y),
+        Math.cos(desiredHeading - root.rotation.y),
+      );
+      root.rotation.y = turnToward(root.rotation.y, desiredHeading, 1.8 * delta);
+      const turnFactor = clamp(1 - Math.abs(headingDifference) / Math.PI * 0.55, 0.4, 1);
+      const distanceFactor = clamp(distance / 0.65, 0.25, 1);
+      animal.currentSpeed = THREE.MathUtils.damp(
+        animal.currentSpeed,
+        speed * turnFactor * distanceFactor,
+        1.6,
+        delta,
+      );
+      const step = Math.min(animal.currentSpeed * delta, distance);
       if (distance > 0.001) {
-        root.position.x += (dx / distance) * step;
-        root.position.z += (dz / distance) * step;
-        root.rotation.y = THREE.MathUtils.damp(root.rotation.y, Math.atan2(dx, -dz), 2.4, delta);
+        root.position.x -= Math.sin(root.rotation.y) * step;
+        root.position.z -= Math.cos(root.rotation.y) * step;
       }
-      root.position.y = landHeightAt(root.position.x, root.position.z);
-      root.rotation.x = Math.sin(elapsed * 7 + phase) * Math.min(step * 0.08, 0.025);
-      const gait = Math.sin(elapsed * 9 + phase) * Math.min(speed * 0.8, 0.45);
+      animal.gaitPhase += delta * (7 + animal.currentSpeed * 8);
+      const stride = Math.sin(animal.gaitPhase) * clamp(animal.currentSpeed / speed, 0, 1);
+      root.position.y = landHeightAt(root.position.x, root.position.z) +
+        Math.abs(Math.sin(animal.gaitPhase * 2)) * Math.min(animal.currentSpeed * 0.035, 0.018);
+      root.rotation.x = Math.sin(animal.gaitPhase * 2) * Math.min(animal.currentSpeed * 0.025, 0.012);
+      const gait = stride * Math.min(speed * 1.1, 0.5);
       legs[0].rotation.x = gait;
       legs[1].rotation.x = -gait;
       legs[2].rotation.x = -gait;
@@ -2118,7 +2095,7 @@
         }
         fish.root.position.copy(position);
         horizontalSpeed = Math.hypot(velocity.x, velocity.z);
-        fish.root.rotation.x = -Math.atan2(velocity.y, Math.max(horizontalSpeed, 0.01));
+        fish.root.rotation.x = Math.atan2(velocity.y, Math.max(horizontalSpeed, 0.01));
       } else {
       fishDesired.set(
         Math.sin(elapsed * 0.23 + phase) * 0.55 + Math.cos(elapsed * 0.11 + phase) * 0.28,
@@ -2176,11 +2153,23 @@
       if (position.z > maxZ - 1.6) fishDesired.z -= (position.z - (maxZ - 1.6)) * 0.55;
       if (fishDesired.lengthSq() > 0.001) fishDesired.setLength(maxSpeed);
 
-      velocity.lerp(fishDesired, 1 - Math.exp(-0.75 * delta));
-      if (velocity.length() < 0.16 && fishDesired.lengthSq() > 0.001) {
-        velocity.addScaledVector(fishDesired, 0.025 / fishDesired.length());
+      const desiredHorizontalSpeed = Math.hypot(fishDesired.x, fishDesired.z);
+      if (desiredHorizontalSpeed > 0.001) {
+        fish.root.rotation.y = turnToward(
+          fish.root.rotation.y,
+          Math.atan2(fishDesired.x, -fishDesired.z),
+          1.15 * delta,
+        );
       }
-      if (velocity.length() > maxSpeed) velocity.setLength(maxSpeed);
+      const swimSpeed = THREE.MathUtils.damp(
+        Math.hypot(velocity.x, velocity.z),
+        maxSpeed,
+        0.75,
+        delta,
+      );
+      velocity.x = Math.sin(fish.root.rotation.y) * swimSpeed;
+      velocity.z = -Math.cos(fish.root.rotation.y) * swimSpeed;
+      velocity.y = THREE.MathUtils.damp(velocity.y, clamp(fishDesired.y * 0.14, -0.12, 0.12), 0.75, delta);
 
       position.addScaledVector(velocity, delta);
       position.x = clamp(position.x, minX, maxX);
@@ -2189,17 +2178,9 @@
       fish.root.position.copy(position);
 
       horizontalSpeed = Math.hypot(velocity.x, velocity.z);
-      if (horizontalSpeed > 0.015) {
-        fish.root.rotation.y = THREE.MathUtils.damp(
-          fish.root.rotation.y,
-          Math.atan2(velocity.x, -velocity.z),
-          2.8,
-          delta,
-        );
-      }
       fish.root.rotation.x = THREE.MathUtils.damp(
         fish.root.rotation.x,
-        -Math.atan2(velocity.y, Math.max(horizontalSpeed, 0.01)),
+        Math.atan2(velocity.y, Math.max(horizontalSpeed, 0.01)),
         1.8,
         delta,
       );
