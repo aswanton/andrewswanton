@@ -2,9 +2,10 @@
 ---
 const projects = [
   {
-    title: "AI Experiments",
-    description: "Exploring how AI can support creative work, research, and practical tooling.",
-    status: "Active",
+    title: "Interactive Water",
+    description: "A wave simulation with ripples, changing wind, and reflected light.",
+    status: "Live experiment",
+    href: "/projects/water/",
   },
   {
     title: "Engineering Toolbox",
@@ -84,6 +85,7 @@ const projects = [
               <div class="project-icon" aria-hidden="true">{index === 0 ? "✳" : index === 1 ? "⌁" : "↗"}</div>
               <h3>{project.title}</h3>
               <p class="project-description">{project.description}</p>
+              {project.href && <a class="project-visit" href={project.href}>Explore the simulation <span aria-hidden="true">↗</span></a>}
               <span class="status"><span></span>{project.status}</span>
             </article>
           ))}
@@ -315,6 +317,10 @@ const projects = [
   h3 { margin: 0 0 7px; font-size: 1.24rem; line-height: 1.2; letter-spacing: -.04em; }
   .project-description { max-width: 300px; margin: 0 0 16px; color: #71819a; font-size: .82rem; line-height: 1.65; }
   .project-1 .project-description { color: #c0cde0; }
+  .project-visit { margin: 0 0 14px; color: #3468f5; font-size: .73rem; font-weight: 750; }
+  .project-visit span { margin-left: 4px; }
+  .project-1 .project-visit { color: #a9c1ff; }
+  .project-visit:hover { text-decoration: underline; text-underline-offset: 3px; }
   .status { display: inline-flex; align-items: center; gap: 7px; margin-top: auto; color: #71819a; font-size: .69rem; font-weight: 700; }
   .project-1 .status { color: #d2def0; }
   .status > span { width: 6px; height: 6px; border-radius: 50%; background: #3468f5; }

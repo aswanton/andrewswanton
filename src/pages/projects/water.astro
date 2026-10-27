@@ -1,0 +1,519 @@
+---
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="theme-color" content="#f3f7fc" />
+    <meta
+      name="description"
+      content="An interactive water experiment by Andrew Swanton, with ripples driven by a wave simulation and reflections that respond to the surface."
+    />
+    <title>Interactive Water | Andrew Swanton</title>
+  </head>
+
+  <body>
+    <main>
+      <header>
+        <a class="logo" href="/" aria-label="Andrew Swanton home">AS<span>.</span></a>
+        <nav aria-label="Main navigation">
+          <a href="/">Home</a>
+          <a href="/#projects">Projects</a>
+        </nav>
+      </header>
+
+      <section class="intro">
+        <a class="back-link" href="/#projects">← Back to projects</a>
+        <p class="eyebrow"><span class="eyebrow-mark"></span> EXPERIMENT 001 · PHYSICS & GRAPHICS</p>
+        <h1>Water,<br /><span>in motion.</span></h1>
+        <p class="lead">
+          A small study of light and moving water. Drop a ripple, change the wind,
+          and watch the reflections bend with the surface.
+        </p>
+      </section>
+
+      <section class="experiment" aria-labelledby="experiment-title">
+        <h2 id="experiment-title" class="visually-hidden">Interactive water simulation</h2>
+        <div class="scene-heading">
+          <span><span class="live-dot"></span> LIVE SIMULATION</span>
+          <span>3D PLANAR REFLECTIONS</span>
+        </div>
+        <div class="water-stage">
+          <canvas
+            id="water"
+            aria-label="Three-dimensional water reflecting a sky and distant shoreline. Click or tap the water to create ripples."
+          ></canvas>
+          <p class="scene-hint" id="scene-hint" aria-live="polite">Click or tap anywhere on the water to make a ripple</p>
+        </div>
+        <div class="controls">
+          <div class="wind-control">
+            <label for="wind">WIND <output id="wind-value" for="wind">38%</output></label>
+            <input id="wind" type="range" min="0" max="100" value="38" />
+            <div class="range-labels"><span>CALM</span><span>BREEZY</span></div>
+          </div>
+          <button class="drop-button" id="drop" type="button">
+            <span class="drop-icon" aria-hidden="true">↓</span>
+            Drop a stone
+          </button>
+        </div>
+      </section>
+
+      <section class="notes">
+        <div class="notes-heading">
+          <p class="eyebrow">UNDER THE SURFACE</p>
+          <h2>A little physics.<br />A lot of light.</h2>
+        </div>
+        <div class="note-list">
+          <article class="note">
+            <span class="note-number">01</span>
+            <div>
+              <h3>Waves with momentum</h3>
+              <p>A damped 2D wave equation carries each disturbance outward, where it spreads, overlaps, and gradually settles.</p>
+            </div>
+          </article>
+          <article class="note">
+            <span class="note-number">02</span>
+            <div>
+              <h3>Ripples you can make</h3>
+              <p>Pointer, touch, and stone-drop inputs add energy to the surface. Wind feeds in smaller disturbances between splashes.</p>
+            </div>
+          </article>
+          <article class="note">
+            <span class="note-number">03</span>
+            <div>
+              <h3>Reflections that move</h3>
+              <p>The sky and distant shoreline are mapped across the water. As the wave slopes change, so does the reflected scene.</p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <p class="caveat">
+        This is a real-time surface-wave approximation, not a full fluid or ray-tracing simulation.
+        It is a work in progress—part physics experiment, part rendering study.
+      </p>
+
+      <footer>
+        <span>© {new Date().getFullYear()} Andrew Swanton</span>
+        <a href="mailto:hello@andrewswanton.com">Get in touch ↗</a>
+      </footer>
+    </main>
+  </body>
+</html>
+
+<script>
+  import * as THREE from "three";
+  import { Water } from "three/addons/objects/Water.js";
+
+  const canvas = document.querySelector<HTMLCanvasElement>("#water");
+  const stage = document.querySelector<HTMLElement>(".water-stage");
+  const hint = document.querySelector<HTMLElement>("#scene-hint");
+  const windSlider = document.querySelector<HTMLInputElement>("#wind");
+  const windOutput = document.querySelector<HTMLOutputElement>("#wind-value");
+  const dropButton = document.querySelector<HTMLButtonElement>("#drop");
+
+  if (!canvas || !stage || !hint || !windSlider || !windOutput || !dropButton) {
+    throw new Error("The interactive water simulation could not initialize.");
+  }
+
+  let renderer: THREE.WebGLRenderer;
+  try {
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      powerPreference: "high-performance",
+    });
+  } catch (error) {
+    hint.textContent = "This browser couldn't start the 3D water scene. Try a browser with WebGL enabled.";
+    console.error("Unable to create the WebGL renderer for the water experiment.", error);
+    throw error;
+  }
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 1800);
+  camera.position.set(0, 5.2, 14);
+  camera.lookAt(0, 0, -38);
+  const waveSize = 128;
+  const waveScale = 0.72;
+  const waveData = new Float32Array(waveSize * waveSize);
+  const previousWaveData = new Float32Array(waveSize * waveSize);
+  const nextWaveData = new Float32Array(waveSize * waveSize);
+  const disposableResources: Array<THREE.BufferGeometry | THREE.Material> = [];
+  const normalPixels = new Uint8Array(waveSize * waveSize * 4);
+  const normalTexture = new THREE.DataTexture(
+    normalPixels,
+    waveSize,
+    waveSize,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  );
+  normalTexture.wrapS = THREE.RepeatWrapping;
+  normalTexture.wrapT = THREE.RepeatWrapping;
+  normalTexture.magFilter = THREE.LinearFilter;
+  normalTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  normalTexture.generateMipmaps = true;
+  normalTexture.colorSpace = THREE.NoColorSpace;
+  normalTexture.needsUpdate = true;
+
+  const skyGeometry = new THREE.SphereGeometry(600, 48, 32);
+  const skyMaterial = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: `
+      varying float vHeight;
+      void main() {
+        vHeight = normalize(position).y;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vHeight;
+      void main() {
+        float horizonBlend = smoothstep(-0.2, 0.76, vHeight);
+        vec3 lowSky = vec3(0.74, 0.82, 0.9);
+        vec3 highSky = vec3(0.15, 0.31, 0.52);
+        vec3 sky = mix(lowSky, highSky, horizonBlend);
+        float glow = exp(-pow((vHeight - 0.08) * 8.0, 2.0));
+        sky = mix(sky, vec3(0.97, 0.83, 0.63), glow * 0.42);
+        gl_FragColor = vec4(sky, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+  });
+  const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+  scene.add(sky);
+
+  function createRidge(z: number, color: number, profile: Array<[number, number]>) {
+    const shape = new THREE.Shape();
+    shape.moveTo(-220, -24);
+    shape.lineTo(-220, profile[0][1]);
+    shape.lineTo(profile[0][0], profile[0][1]);
+
+    for (let index = 0; index < profile.length - 1; index++) {
+      const current = profile[index];
+      const next = profile[index + 1];
+      const midpoint = (current[0] + next[0]) / 2;
+      shape.quadraticCurveTo(current[0] + (next[0] - current[0]) * 0.3, current[1], midpoint, (current[1] + next[1]) / 2);
+      shape.quadraticCurveTo(current[0] + (next[0] - current[0]) * 0.7, next[1], next[0], next[1]);
+    }
+
+    shape.lineTo(220, -24);
+    shape.closePath();
+    const geometry = new THREE.ShapeGeometry(shape, 48);
+    const material = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
+    disposableResources.push(geometry, material);
+    const ridge = new THREE.Mesh(geometry, material);
+    ridge.position.z = z;
+    scene.add(ridge);
+  }
+
+  createRidge(-125, 0x849bb0, [
+    [-200, 1], [-174, 13], [-145, 8], [-111, 23], [-73, 7], [-42, 17], [-5, 4],
+    [35, 18], [68, 9], [104, 25], [141, 8], [178, 16], [220, 4],
+  ]);
+  createRidge(-115, 0x405c78, [
+    [-220, 0], [-184, 7], [-150, 3], [-118, 12], [-82, 2], [-46, 9], [-8, 1],
+    [24, 8], [62, 3], [98, 11], [136, 1], [169, 7], [220, 2],
+  ]);
+
+  const sunDirection = new THREE.Vector3(32, 30, -115).normalize();
+  const sunGeometry = new THREE.SphereGeometry(4.2, 32, 24);
+  const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffe8c1, toneMapped: false });
+  disposableResources.push(sunGeometry, sunMaterial);
+  const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+  sun.position.set(32, 30, -115);
+  scene.add(sun);
+  scene.add(new THREE.HemisphereLight(0xb8d4f1, 0x182c42, 1.5));
+  const sunlight = new THREE.DirectionalLight(0xffe8c5, 2.2);
+  sunlight.position.copy(sunDirection).multiplyScalar(180);
+  scene.add(sunlight);
+
+  const waterGeometry = new THREE.PlaneGeometry(900, 900);
+  disposableResources.push(waterGeometry);
+  waterGeometry.rotateX(-Math.PI / 2);
+  const water = new Water(waterGeometry, {
+    textureWidth: 768,
+    textureHeight: 512,
+    waterNormals: normalTexture,
+    sunDirection,
+    sunColor: 0xffe9c7,
+    waterColor: 0x0b3458,
+    distortionScale: 3.8,
+    size: waveScale,
+    clipBias: 0.002,
+    alpha: 1,
+  });
+  water.position.y = 0;
+  scene.add(water);
+
+  let frame = 0;
+  let wind = Number(windSlider.value) / 100;
+  let elapsed = 0;
+  let previousFrameTime = 0;
+  let animationFrame = 0;
+  let rippleCount = 0;
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+
+  const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+  function resize() {
+    const bounds = stage.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    renderer.setPixelRatio(pixelRatio);
+    renderer.setSize(bounds.width, bounds.height, false);
+    camera.aspect = bounds.width / bounds.height;
+    camera.updateProjectionMatrix();
+  }
+
+  function addRipple(x: number, y: number, strength: number, announce = true) {
+    const radius = 4;
+    for (let row = -radius * 3; row <= radius * 3; row++) {
+      for (let column = -radius * 3; column <= radius * 3; column++) {
+        const distanceSquared = column * column + row * row;
+        if (distanceSquared > radius * radius * 9) continue;
+        const wrappedX = (Math.round(x + column) + waveSize) % waveSize;
+        const wrappedY = (Math.round(y + row) + waveSize) % waveSize;
+        const index = wrappedY * waveSize + wrappedX;
+        waveData[index] += strength * Math.exp(-distanceSquared / (radius * radius));
+      }
+    }
+
+    if (announce) {
+      rippleCount++;
+      hint.textContent = `Ripple ${rippleCount} added — tap again or change the wind`;
+    }
+  }
+
+  function updateWaves() {
+    const damping = 0.016 + wind * 0.012;
+
+    for (let y = 0; y < waveSize; y++) {
+      const above = ((y - 1 + waveSize) % waveSize) * waveSize;
+      const below = ((y + 1) % waveSize) * waveSize;
+      const row = y * waveSize;
+
+      for (let x = 0; x < waveSize; x++) {
+        const left = row + (x - 1 + waveSize) % waveSize;
+        const right = row + (x + 1) % waveSize;
+        const index = row + x;
+        const current = waveData[index];
+        const laplacian =
+          waveData[left] +
+          waveData[right] +
+          waveData[above + x] +
+          waveData[below + x] -
+          4 * current;
+
+        nextWaveData[index] =
+          2 * current -
+          previousWaveData[index] +
+          0.22 * laplacian -
+          damping * (current - previousWaveData[index]);
+      }
+    }
+
+    const oldPrevious = previousWaveData;
+    previousWaveData.set(waveData);
+    waveData.set(nextWaveData);
+    nextWaveData.set(oldPrevious);
+  }
+
+  function updateNormalTexture() {
+    const phase = elapsed * (0.3 + wind * 0.8);
+    const surfaceHeight = (x: number, y: number) => {
+      const sampleX = (x + waveSize) % waveSize;
+      const sampleY = (y + waveSize) % waveSize;
+      const u = sampleX / waveSize;
+      const v = sampleY / waveSize;
+      const index = sampleY * waveSize + sampleX;
+
+      return waveData[index] * 0.7 +
+        Math.sin((u * 3 + v * 2) * Math.PI * 2 + phase) * 0.22 +
+        Math.sin((u * 5 - v * 3) * Math.PI * 2 - phase * 0.7) * 0.12;
+    };
+
+    for (let y = 0; y < waveSize; y++) {
+      const row = y * waveSize;
+      const above = ((y - 1 + waveSize) % waveSize) * waveSize;
+      const below = ((y + 1) % waveSize) * waveSize;
+
+      for (let x = 0; x < waveSize; x++) {
+        const left = (x - 1 + waveSize) % waveSize;
+        const right = (x + 1) % waveSize;
+        const index = row + x;
+        const slopeX = (surfaceHeight(right, y) - surfaceHeight(left, y)) * 1.15;
+        const slopeZ = (surfaceHeight(x, y + 1) - surfaceHeight(x, y - 1)) * 1.15;
+        const normalX = clamp(-slopeX, -0.95, 0.95);
+        const normalZ = clamp(-slopeZ, -0.95, 0.95);
+        const normalY = Math.sqrt(Math.max(0.01, 1 - normalX * normalX - normalZ * normalZ));
+        const pixel = index * 4;
+
+        normalPixels[pixel] = Math.round((normalX * 0.5 + 0.5) * 255);
+        normalPixels[pixel + 1] = Math.round((normalZ * 0.5 + 0.5) * 255);
+        normalPixels[pixel + 2] = Math.round((normalY * 0.5 + 0.5) * 255);
+        normalPixels[pixel + 3] = 255;
+      }
+    }
+
+    normalTexture.needsUpdate = true;
+  }
+
+  function makeWindRipple() {
+    if (wind > 0 && frame % 15 === 0) {
+      addRipple(
+        Math.random() * waveSize,
+        waveSize * (0.18 + Math.random() * 0.64),
+        wind * 0.18,
+        false,
+      );
+    }
+  }
+
+  function animate(now: number) {
+    const delta = previousFrameTime === 0 ? 0 : Math.min((now - previousFrameTime) / 1000, 0.05);
+    previousFrameTime = now;
+    elapsed += delta;
+    frame++;
+    makeWindRipple();
+    updateWaves();
+    updateNormalTexture();
+    water.material.uniforms.time.value += delta * (0.2 + wind * 0.8);
+    renderer.render(scene, camera);
+    animationFrame = window.requestAnimationFrame(animate);
+  }
+
+  function dropAt(clientX: number, clientY: number, strength: number) {
+    const bounds = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1;
+    pointer.y = -((clientY - bounds.top) / bounds.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const intersection = raycaster.intersectObject(water, false)[0];
+    if (!intersection) return;
+
+    const repeatDistance = 103 / waveScale;
+    const wrap = (value: number) => ((value / repeatDistance) % 1 + 1) % 1;
+    addRipple(
+      Math.floor(wrap(intersection.point.x) * waveSize),
+      Math.floor(wrap(intersection.point.z) * waveSize),
+      strength,
+    );
+  }
+
+  canvas.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    dropAt(event.clientX, event.clientY, 1.65);
+  });
+
+  dropButton.addEventListener("click", () => {
+    const bounds = canvas.getBoundingClientRect();
+    dropAt(bounds.left + bounds.width * (0.3 + Math.random() * 0.4), bounds.top + bounds.height * (0.3 + Math.random() * 0.4), 1.8);
+  });
+
+  windSlider.addEventListener("input", () => {
+    wind = Number(windSlider.value) / 100;
+    windOutput.value = `${windSlider.value}%`;
+  });
+
+  const resizeObserver = new ResizeObserver(resize);
+  resizeObserver.observe(stage);
+  resize();
+  addRipple(waveSize * 0.5, waveSize * 0.54, 0.65, false);
+  animationFrame = window.requestAnimationFrame(animate);
+
+  function dispose() {
+    window.cancelAnimationFrame(animationFrame);
+    resizeObserver.disconnect();
+    normalTexture.dispose();
+    for (const resource of disposableResources) resource.dispose();
+    water.material.dispose();
+    skyGeometry.dispose();
+    skyMaterial.dispose();
+    renderer.dispose();
+  }
+
+  window.addEventListener("pagehide", dispose, { once: true });
+</script>
+
+<style>
+  :global(*) { box-sizing: border-box; }
+  :global(html) { scroll-behavior: smooth; }
+  :global(body) {
+    margin: 0;
+    background: #f3f7fc;
+    color: #14233b;
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+    line-height: 1.6;
+  }
+  main { max-width: 1220px; margin: auto; padding: 0 42px; }
+  header, footer { display: flex; justify-content: space-between; align-items: center; }
+  header { padding: 27px 0; border-bottom: 1px solid #d8e1ed; }
+  .logo { font-size: 1.45rem; line-height: 1; font-weight: 850; letter-spacing: -.08em; color: inherit; text-decoration: none; }
+  .logo span { color: #3468f5; }
+  nav { display: flex; gap: 34px; }
+  nav a, footer a { color: inherit; text-decoration: none; font-size: .88rem; font-weight: 650; }
+  nav a:hover, footer a:hover, .back-link:hover { color: #3468f5; }
+  a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #3468f5; outline-offset: 4px; }
+  .intro { max-width: 760px; padding: 53px 0 34px; }
+  .back-link { display: inline-block; margin-bottom: 33px; color: #63748b; font-size: .8rem; font-weight: 650; text-decoration: none; }
+  .eyebrow { margin: 0; color: #687a94; font-size: .68rem; letter-spacing: .14em; font-weight: 800; }
+  .intro > .eyebrow { display: flex; align-items: center; gap: 9px; color: #465a77; }
+  .eyebrow-mark, .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #3468f5; }
+  h1 { margin: 21px 0 17px; font-size: clamp(4rem, 8vw, 6.7rem); line-height: .96; letter-spacing: -.085em; }
+  h1 span { color: #3468f5; }
+  .lead { max-width: 600px; margin: 0; color: #63748b; font-size: 1.08rem; line-height: 1.75; }
+  .experiment { margin-top: 21px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .scene-heading { display: flex; justify-content: space-between; align-items: center; padding: 0 0 12px; color: #70819a; font-size: .64rem; letter-spacing: .12em; font-weight: 800; }
+  .scene-heading > span:first-child { display: flex; align-items: center; gap: 9px; color: #35527c; }
+  .live-dot { width: 7px; height: 7px; background: #4a9b91; box-shadow: 0 0 0 4px rgba(74, 155, 145, .13); }
+  .water-stage { position: relative; height: clamp(300px, 48vw, 520px); overflow: hidden; border: 1px solid #c8d7e8; border-radius: 7px; background: #112e50; }
+  #water { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  .scene-hint { position: absolute; right: 16px; bottom: 13px; margin: 0; padding: 7px 11px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(15, 35, 60, .55); color: #f4f8ff; font-size: .7rem; pointer-events: none; backdrop-filter: blur(8px); }
+  .controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 19px 0 0; }
+  .wind-control { width: min(100%, 300px); }
+  .wind-control label { display: flex; justify-content: space-between; color: #465a77; font-size: .67rem; letter-spacing: .12em; font-weight: 800; }
+  .wind-control output { color: #3468f5; font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 100%; height: 4px; margin: 14px 0 2px; accent-color: #3468f5; cursor: pointer; }
+  .range-labels { display: flex; justify-content: space-between; color: #8593a6; font-size: .56rem; letter-spacing: .1em; font-weight: 750; }
+  .drop-button { display: inline-flex; align-items: center; gap: 10px; padding: 11px 15px; border: 0; border-radius: 4px; background: #14233b; color: #f8fbff; font: inherit; font-size: .78rem; font-weight: 700; cursor: pointer; transition: background .2s ease, transform .2s ease; }
+  .drop-button:hover { background: #3468f5; transform: translateY(-2px); }
+  .drop-icon { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 50%; background: #a9c1ff; color: #14233b; font-size: .9rem; }
+  .notes { display: grid; grid-template-columns: .8fr 1.2fr; gap: 65px; margin: 99px 0 39px; padding: 44px 0 0; border-top: 1px solid #d8e1ed; }
+  .notes-heading h2 { margin: 13px 0 0; font-size: clamp(2rem, 4vw, 3.2rem); line-height: 1.04; letter-spacing: -.065em; }
+  .note-list { display: grid; gap: 0; }
+  .note { display: grid; grid-template-columns: 39px 1fr; gap: 12px; padding: 0 0 20px; }
+  .note + .note { padding-top: 19px; border-top: 1px solid #d8e1ed; }
+  .note-number { color: #3468f5; font-size: .7rem; font-weight: 800; }
+  .note h3 { margin: 0 0 5px; font-size: .95rem; letter-spacing: -.02em; }
+  .note p { max-width: 490px; margin: 0; color: #6a7b91; font-size: .81rem; line-height: 1.75; }
+  .caveat { max-width: 670px; margin: 0 0 55px auto; color: #8593a6; font-size: .72rem; line-height: 1.7; }
+  footer { min-height: 77px; border-top: 1px solid #d8e1ed; color: #71819a; font-size: .75rem; }
+  footer a { color: #14233b; }
+  @media (max-width: 700px) {
+    main { padding: 0 23px; }
+    header { padding: 22px 0; }
+    nav { gap: 21px; }
+    .intro { padding-top: 39px; }
+    h1 { font-size: clamp(3rem, 12vw, 4.2rem); }
+    h1 span { white-space: nowrap; }
+    .scene-heading { font-size: .56rem; }
+    .water-stage { height: clamp(280px, 75vw, 420px); }
+    .notes { grid-template-columns: 1fr; gap: 28px; margin-top: 71px; }
+    .notes-heading h2 br { display: none; }
+    .caveat { margin-left: 0; }
+  }
+  @media (max-width: 420px) {
+    main { padding: 0 18px; }
+    .scene-heading { letter-spacing: .07em; }
+    .scene-hint { right: 9px; bottom: 9px; font-size: .62rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(html) { scroll-behavior: auto; }
+    *, *::before, *::after { transition-duration: .01ms !important; }
+  }
+</style>
