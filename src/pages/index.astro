@@ -2,18 +2,18 @@
 ---
 const projects = [
   {
+    title: "AI Experiments",
+    description: "Exploring how AI can support creative work, research, and practical tooling.",
+    status: "Active",
+  },
+  {
     title: "Engineering Toolbox",
-    description: "Interactive calculators and utilities for electronics engineering.",
+    description: "Interactive utilities and calculators for electronics, measurement, and prototyping.",
     status: "In development",
   },
   {
-    title: "ADC Visualizer",
-    description: "Explore sampling, quantization, resolution, and signal noise.",
-    status: "Planned",
-  },
-  {
-    title: "Experiments",
-    description: "Technical experiments, simulations, and things I'm learning.",
+    title: "Build in Public",
+    description: "Side projects, prototypes, and experiments that turn curiosity into learning.",
     status: "Ongoing",
   },
 ];
@@ -23,18 +23,18 @@ const projects = [
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width" />
-    <meta name="theme-color" content="#101318" />
+    <meta name="theme-color" content="#f3f7fc" />
     <meta
       name="description"
-      content="Engineering projects, interactive tools, and technical experiments by Andrew Swanton."
+      content="Andrew Swanton explores AI, engineering, and new ideas through experiments, prototypes, and projects."
     />
-    <title>Andrew Swanton | Engineering & Experiments</title>
+    <title>Andrew Swanton | Exploring AI & Engineering</title>
   </head>
 
   <body>
     <main>
       <header>
-        <a class="logo" href="/">AS<span>.</span></a>
+        <a class="logo" href="/" aria-label="Andrew Swanton home">AS<span>.</span></a>
         <nav>
           <a href="#projects">Projects</a>
           <a href="#about">About</a>
@@ -42,38 +42,68 @@ const projects = [
       </header>
 
       <section class="hero">
-        <p class="eyebrow">ENGINEERING · EXPERIMENTS · BUILDING</p>
-        <h1>Ideas are better<br />when you <span>build them.</span></h1>
-        <p class="intro">
-          I'm Andrew. This is my corner of the internet for engineering
-          projects, interactive tools, and experiments worth sharing.
-        </p>
-        <a class="cta" href="#projects">Explore my projects ↘</a>
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-mark"></span> A PERSONAL PLAYGROUND FOR WHAT'S NEXT</p>
+          <h1>Curious by<br />nature. <span>Making</span><br />by habit.</h1>
+          <p class="intro">
+            I'm Andrew. I'm exploring AI, engineering, and all the unexpected
+            things that happen when you start making.
+          </p>
+          <a class="cta" href="#projects">See what I'm exploring <span aria-hidden="true">↘</span></a>
+        </div>
+        <div class="hero-art" aria-label="Abstract illustration of connected ideas">
+          <div class="art-topline"><span>IDEA → EXPERIMENT</span><span>001 — ∞</span></div>
+          <div class="orbit orbit-one"></div>
+          <div class="orbit orbit-two"></div>
+          <div class="orbit orbit-three"></div>
+          <div class="art-core"><span>what<br />if<span class="question">?</span></span></div>
+          <span class="art-node node-ai">AI</span>
+          <span class="art-node node-build">BUILD</span>
+          <span class="art-node node-learn">LEARN</span>
+          <span class="art-spark spark-one">✳</span>
+          <span class="art-spark spark-two">✳</span>
+          <p class="art-caption">Follow the question.<br />See where it takes you.</p>
+        </div>
       </section>
 
       <section id="projects">
-        <p class="eyebrow">SELECTED WORK</p>
-        <h2>Things I'm building.</h2>
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">A WORK IN PROGRESS, BY DESIGN</p>
+            <h2>Currently curious about<span>.</span></h2>
+          </div>
+          <p class="section-note">A few directions I'm exploring.<br />More experiments are always underway.</p>
+        </div>
         <div class="projects">
           {projects.map((project, index) => (
-            <article class="project">
-              <p class="number">0{index + 1} / PROJECT</p>
+            <article class={`project project-${index + 1}`}>
+              <div class="project-topline">
+                <p class="number">0{index + 1} <span>/ 03</span></p>
+                <span class="project-arrow" aria-hidden="true">↗</span>
+              </div>
+              <div class="project-icon" aria-hidden="true">{index === 0 ? "✳" : index === 1 ? "⌁" : "↗"}</div>
               <h3>{project.title}</h3>
-              <p>{project.description}</p>
-              <span class="status">{project.status}</span>
+              <p class="project-description">{project.description}</p>
+              <span class="status"><span></span>{project.status}</span>
             </article>
           ))}
         </div>
       </section>
 
       <section id="about" class="about">
-        <p class="eyebrow">A LITTLE ABOUT THIS SITE</p>
-        <h2>A place to build in public.</h2>
-        <p>
-          This site is an evolving collection of projects, technical notes,
-          and ideas. Some will become useful tools; others are simply
-          experiments in learning something new.
-        </p>
+        <div class="about-label">
+          <p class="eyebrow">THE POINT OF IT ALL</p>
+          <span aria-hidden="true">✳</span>
+        </div>
+        <div class="about-copy">
+          <h2>Less talking about the future. <span>More trying things.</span></h2>
+          <p>
+            This is a home for experiments, prototypes, and ideas in progress.
+            I'm interested in AI, engineering, and learning by making—whether
+            that leads to a useful tool, a new perspective, or simply a better
+            question.
+          </p>
+        </div>
       </section>
 
       <footer>
@@ -89,42 +119,250 @@ const projects = [
   :global(html) { scroll-behavior: smooth; }
   :global(body) {
     margin: 0;
-    background: #101318;
-    color: #edf0f5;
-    font-family: system-ui, -apple-system, sans-serif;
+    background: #f3f7fc;
+    color: #14233b;
+    font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
     line-height: 1.6;
   }
-  main { max-width: 1080px; margin: auto; padding: 0 28px; }
+  :global(::selection) { background: #c9d9ff; color: #14233b; }
+  main { max-width: 1220px; margin: auto; padding: 0 42px; }
   header, footer {
-    display: flex; justify-content: space-between;
-    align-items: center; padding: 28px 0;
-    border-bottom: 1px solid #2b303a;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }
-  .logo { font-size: 1.5rem; font-weight: 800; color: inherit; }
-  .logo span, h1 span { color: #80e0c0; }
-  nav { display: flex; gap: 24px; }
+  header { padding: 27px 0; border-bottom: 1px solid #d8e1ed; }
+  .logo { font-size: 1.45rem; line-height: 1; font-weight: 850; letter-spacing: -.08em; }
+  .logo span { color: #3468f5; }
+  nav { display: flex; gap: 34px; }
   a { color: inherit; text-decoration: none; }
-  nav a, footer a { color: #aeb6c5; }
-  .hero { padding: 110px 0 120px; max-width: 760px; }
-  .eyebrow, .number {
-    color: #80e0c0; font-size: .76rem;
-    letter-spacing: .14em; font-weight: 700;
+  nav a, footer a { font-size: .88rem; font-weight: 650; }
+  nav a { transition: color .2s ease; }
+  nav a:hover, footer a:hover { color: #3468f5; }
+  a:focus-visible { outline: 3px solid #3468f5; outline-offset: 5px; border-radius: 2px; }
+  .hero {
+    min-height: 620px;
+    padding: 83px 0 100px;
+    display: grid;
+    grid-template-columns: 1.05fr .95fr;
+    align-items: center;
+    gap: 44px;
   }
-  h1 { font-size: clamp(3rem, 8vw, 6rem); line-height: 1.05; letter-spacing: -.06em; margin: 24px 0; }
-  h2 { font-size: clamp(2rem, 5vw, 3rem); line-height: 1.15; letter-spacing: -.04em; }
-  h3 { font-size: 1.4rem; margin-bottom: 8px; }
-  .intro { color: #aeb6c5; font-size: 1.15rem; max-width: 590px; margin-bottom: 32px; }
-  .cta { display: inline-block; background: #80e0c0; color: #101318; padding: 12px 18px; border-radius: 5px; font-weight: 700; }
-  #projects { padding: 50px 0 90px; }
-  .projects { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 32px; }
-  .project { border: 1px solid #303640; border-radius: 10px; padding: 24px; background: #171b22; }
-  .project > p:not(.number), .about > p:last-child { color: #aeb6c5; }
-  .status { font-size: .8rem; color: #80e0c0; }
-  .about { border-top: 1px solid #303640; padding: 65px 0; max-width: 700px; }
-  footer { border-bottom: 0; border-top: 1px solid #303640; color: #aeb6c5; font-size: .9rem; }
-  @media (max-width: 520px) {
+  .hero-copy { position: relative; z-index: 1; }
+  .eyebrow, .number {
+    margin: 0;
+    font-size: .68rem;
+    letter-spacing: .14em;
+    line-height: 1.4;
+    font-weight: 800;
+  }
+  .eyebrow { color: #687a94; }
+  .hero-copy .eyebrow { display: flex; align-items: center; gap: 10px; color: #465a77; }
+  .eyebrow-mark { display: inline-block; width: 8px; height: 8px; background: #3468f5; border-radius: 50%; }
+  h1 {
+    margin: 29px 0 22px;
+    font-size: clamp(4.1rem, 8vw, 7.25rem);
+    line-height: .96;
+    letter-spacing: -.085em;
+    font-weight: 750;
+  }
+  h1 span { color: #3468f5; }
+  .intro { max-width: 470px; margin: 0 0 29px; color: #63748b; font-size: 1.08rem; line-height: 1.75; }
+  .cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 28px;
+    padding: 13px 17px;
+    border-radius: 4px;
+    background: #14233b;
+    color: #f8fbff;
+    font-size: .83rem;
+    font-weight: 700;
+    transition: background .2s ease, transform .2s ease;
+  }
+  .cta:hover { background: #3468f5; transform: translateY(-2px); }
+  .cta span { color: #a9c1ff; font-size: 1.1rem; }
+  .hero-art {
+    position: relative;
+    min-height: 420px;
+    overflow: hidden;
+    border-radius: 5px;
+    background-color: #dce9ff;
+    background-image: radial-gradient(#a9c2f2 1px, transparent 1px);
+    background-size: 19px 19px;
+    isolation: isolate;
+  }
+  .art-topline {
+    position: absolute;
+    top: 20px;
+    left: 22px;
+    right: 22px;
+    display: flex;
+    justify-content: space-between;
+    color: #415b85;
+    font-size: .61rem;
+    font-weight: 800;
+    letter-spacing: .1em;
+  }
+  .orbit {
+    position: absolute;
+    left: 50%;
+    top: 47%;
+    border: 1px solid rgba(38, 76, 144, .3);
+    border-radius: 50%;
+    transform: translate(-50%, -50%) rotate(-24deg);
+  }
+  .orbit-one { width: 305px; height: 160px; }
+  .orbit-two { width: 305px; height: 160px; transform: translate(-50%, -50%) rotate(36deg); }
+  .orbit-three { width: 225px; height: 225px; border-style: dashed; opacity: .7; }
+  .art-core {
+    position: absolute;
+    left: 50%;
+    top: 47%;
+    display: grid;
+    place-items: center;
+    width: 104px;
+    height: 104px;
+    border-radius: 50%;
+    background: #3468f5;
+    color: #ffffff;
+    text-align: center;
+    font-size: 1.4rem;
+    font-weight: 750;
+    line-height: 1;
+    letter-spacing: -.06em;
+    transform: translate(-50%, -50%) rotate(-7deg);
+    box-shadow: 0 8px 25px rgba(25, 70, 160, .2);
+  }
+  .question { color: #c9d9ff; }
+  .art-node {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    min-width: 58px;
+    height: 34px;
+    padding: 0 11px;
+    border: 1px solid #28436f;
+    border-radius: 50px;
+    background: #f7faff;
+    color: #14233b;
+    font-size: .59rem;
+    font-weight: 850;
+    letter-spacing: .08em;
+  }
+  .node-ai { top: 26%; left: 22%; }
+  .node-build { top: 34%; right: 12%; }
+  .node-learn { bottom: 23%; left: 32%; }
+  .art-spark { position: absolute; color: #3468f5; font-size: 1.3rem; }
+  .spark-one { top: 28%; right: 25%; }
+  .spark-two { bottom: 21%; right: 24%; font-size: .9rem; }
+  .art-caption {
+    position: absolute;
+    right: 20px;
+    bottom: 12px;
+    margin: 0;
+    color: #415b85;
+    font-size: .67rem;
+    font-weight: 650;
+    line-height: 1.45;
+    text-align: right;
+  }
+  #projects { padding: 31px 0 112px; }
+  .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
+  .section-heading h2 {
+    margin: 12px 0 0;
+    font-size: clamp(2rem, 4vw, 3.25rem);
+    line-height: 1.08;
+    letter-spacing: -.065em;
+  }
+  .section-heading h2 span { color: #3468f5; }
+  .section-note { margin: 0 0 3px; color: #71819a; font-size: .8rem; line-height: 1.65; }
+  .projects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 35px; }
+  .project {
+    position: relative;
+    min-height: 302px;
+    padding: 22px 23px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    overflow: hidden;
+    border: 1px solid #dce5f0;
+    border-radius: 5px;
+    background: #ffffff;
+    transition: transform .22s ease, box-shadow .22s ease;
+  }
+  .project:hover { transform: translateY(-5px); box-shadow: 0 15px 35px rgba(30, 65, 120, .1); }
+  .project-1 { background: #14233b; color: #f3f7fc; border-color: #14233b; }
+  .project-topline { width: 100%; display: flex; align-items: center; justify-content: space-between; }
+  .number { color: #8290a4; }
+  .project-1 .number { color: #a9c1ff; }
+  .number span { color: #a9b5c6; }
+  .project-arrow { color: #8190a5; font-size: 1.05rem; }
+  .project-1 .project-arrow { color: #a9c1ff; }
+  .project-icon {
+    width: 49px;
+    height: 49px;
+    margin: 30px 0 18px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: #e9f0ff;
+    color: #3468f5;
+    font-size: 1.4rem;
+  }
+  .project-1 .project-icon { background: #adc4ff; color: #14233b; }
+  .project-3 .project-icon { background: #d8e8ff; }
+  h3 { margin: 0 0 7px; font-size: 1.24rem; line-height: 1.2; letter-spacing: -.04em; }
+  .project-description { max-width: 300px; margin: 0 0 16px; color: #71819a; font-size: .82rem; line-height: 1.65; }
+  .project-1 .project-description { color: #c0cde0; }
+  .status { display: inline-flex; align-items: center; gap: 7px; margin-top: auto; color: #71819a; font-size: .69rem; font-weight: 700; }
+  .project-1 .status { color: #d2def0; }
+  .status > span { width: 6px; height: 6px; border-radius: 50%; background: #3468f5; }
+  .project-1 .status > span { background: #91adff; }
+  .about {
+    display: grid;
+    grid-template-columns: .75fr 1.25fr;
+    gap: 36px;
+    margin-bottom: 68px;
+    padding: 45px 48px;
+    border-radius: 5px;
+    background: #e4ecf8;
+  }
+  .about-label { display: flex; justify-content: space-between; align-items: flex-start; }
+  .about-label > span { color: #3468f5; font-size: 1.5rem; }
+  .about-copy h2 { max-width: 620px; margin: 0 0 17px; font-size: clamp(1.8rem, 3.5vw, 2.8rem); line-height: 1.1; letter-spacing: -.06em; }
+  .about-copy h2 span { color: #3468f5; }
+  .about-copy p { max-width: 600px; margin: 0; color: #63748b; font-size: .92rem; line-height: 1.8; }
+  footer { min-height: 77px; border-top: 1px solid #d8e1ed; color: #71819a; font-size: .75rem; }
+  footer a { color: #14233b; }
+  @media (max-width: 800px) {
+    main { padding: 0 28px; }
+    .hero { min-height: initial; grid-template-columns: 1fr 1fr; gap: 25px; padding: 68px 0 85px; }
+    h1 { font-size: clamp(3.7rem, 8vw, 5.4rem); }
+    .hero-art { min-height: 350px; }
+    .orbit-one, .orbit-two { width: 250px; height: 140px; }
+    .projects { grid-template-columns: 1fr 1fr; }
+    .project:last-child { grid-column: span 2; min-height: 250px; }
+  }
+  @media (max-width: 560px) {
     main { padding: 0 20px; }
-    .hero { padding: 75px 0; }
-    nav { gap: 14px; }
+    header { padding: 22px 0; }
+    nav { gap: 21px; }
+    .hero { display: flex; flex-direction: column; align-items: stretch; gap: 40px; padding: 61px 0 77px; }
+    h1 { margin-top: 24px; font-size: clamp(4rem, 16vw, 5.6rem); }
+    .intro { font-size: 1rem; }
+    .hero-art { min-height: 330px; }
+    #projects { padding: 0 0 76px; }
+    .section-heading { display: block; }
+    .section-note { margin-top: 14px; }
+    .projects { grid-template-columns: 1fr; gap: 12px; margin-top: 25px; }
+    .project, .project:last-child { grid-column: auto; min-height: 275px; }
+    .about { display: block; margin-bottom: 42px; padding: 28px 24px 32px; }
+    .about-label { margin-bottom: 27px; }
+    footer { gap: 15px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(html) { scroll-behavior: auto; }
+    *, *::before, *::after { transition-duration: .01ms !important; }
   }
 </style>
