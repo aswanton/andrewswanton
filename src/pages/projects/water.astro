@@ -28,8 +28,8 @@
         <p class="eyebrow"><span class="eyebrow-mark"></span> EXPERIMENT 001 · PHYSICS & GRAPHICS</p>
         <h1>Water,<br /><span>in motion.</span></h1>
         <p class="lead">
-          A small study of light and moving water. Drop a ripple, change the wind,
-          and watch the reflections bend with the surface.
+          A small study of light and moving water. Drop a ripple, push the floating sphere,
+          change the wind, and watch a little duck paddle around the pool.
         </p>
       </section>
 
@@ -37,14 +37,15 @@
         <h2 id="experiment-title" class="visually-hidden">Interactive water simulation</h2>
         <div class="scene-heading">
           <span><span class="live-dot"></span> LIVE SIMULATION</span>
-          <span>3D PLANAR REFLECTIONS</span>
+          <span>3D INTERACTIVE POOL</span>
         </div>
         <div class="water-stage">
           <canvas
             id="water"
-            aria-label="Three-dimensional water reflecting a sky and distant shoreline. Click or tap the water to create ripples."
-          ></canvas>
-          <p class="scene-hint" id="scene-hint" aria-live="polite">Click or tap anywhere on the water to make a ripple</p>
+            aria-label="Three-dimensional tiled pool with interactive water, a draggable floating sphere, and a duck that wanders across the pool."
+          >          </canvas>
+          <span id="ripple-impact" aria-hidden="true"></span>
+          <p class="scene-hint" id="scene-hint" aria-live="polite">Pick up and drop the sphere, or tap the water to make a ripple</p>
         </div>
         <div class="controls">
           <div class="wind-control">
@@ -69,28 +70,28 @@
             <span class="note-number">01</span>
             <div>
               <h3>Waves with momentum</h3>
-              <p>A damped 2D wave equation carries each disturbance outward, where it spreads, overlaps, and gradually settles.</p>
+              <p>A damped wave equation carries each splash across the pool, where crests and troughs spread, overlap, and follow the duck's gentle wake without changing the pool's total water volume.</p>
             </div>
           </article>
           <article class="note">
             <span class="note-number">02</span>
             <div>
               <h3>Ripples you can make</h3>
-              <p>Pointer, touch, and stone-drop inputs add energy to the surface. Wind feeds in smaller disturbances between splashes.</p>
+              <p>Push the floating sphere, watch the duck paddle, or drop a stone to send waves across the pool. Wind feeds in smaller disturbances between splashes.</p>
             </div>
           </article>
           <article class="note">
             <span class="note-number">03</span>
             <div>
               <h3>Reflections that move</h3>
-              <p>The sky and distant shoreline are mapped across the water. As the wave slopes change, so does the reflected scene.</p>
+              <p>Moving wave normals bend bright highlights across the reflective surface, revealing the pool tiles underneath.</p>
             </div>
           </article>
         </div>
       </section>
 
       <p class="caveat">
-        This is a real-time surface-wave approximation, not a full fluid or ray-tracing simulation.
+        This is a real-time surface-wave approximation, not a full fluid or ray-tracing simulation. Disturbances are balanced against surrounding troughs so the pool's mean water level stays constant.
         It is a work in progress—part physics experiment, part rendering study.
       </p>
 
@@ -109,11 +110,12 @@
   const canvas = document.querySelector<HTMLCanvasElement>("#water");
   const stage = document.querySelector<HTMLElement>(".water-stage");
   const hint = document.querySelector<HTMLElement>("#scene-hint");
+  const rippleImpact = document.querySelector<HTMLElement>("#ripple-impact");
   const windSlider = document.querySelector<HTMLInputElement>("#wind");
   const windOutput = document.querySelector<HTMLOutputElement>("#wind-value");
   const dropButton = document.querySelector<HTMLButtonElement>("#drop");
 
-  if (!canvas || !stage || !hint || !windSlider || !windOutput || !dropButton) {
+  if (!canvas || !stage || !hint || !rippleImpact || !windSlider || !windOutput || !dropButton) {
     throw new Error("The interactive water simulation could not initialize.");
   }
 
@@ -131,11 +133,13 @@
   }
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 1800);
-  camera.position.set(0, 5.2, 14);
-  camera.lookAt(0, 0, -38);
+  scene.background = new THREE.Color(0x0b141a);
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 180);
+  camera.position.set(10, 9.5, 14);
+  camera.lookAt(0, -1.2, -1);
   const waveSize = 128;
-  const waveScale = 0.72;
+  const waveScale = 5;
+  const repeatDistance = 103 / waveScale;
   const waveData = new Float32Array(waveSize * waveSize);
   const previousWaveData = new Float32Array(waveSize * waveSize);
   const nextWaveData = new Float32Array(waveSize * waveSize);
@@ -156,96 +160,256 @@
   normalTexture.colorSpace = THREE.NoColorSpace;
   normalTexture.needsUpdate = true;
 
-  const skyGeometry = new THREE.SphereGeometry(600, 48, 32);
-  const skyMaterial = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    vertexShader: `
-      varying float vHeight;
-      void main() {
-        vHeight = normalize(position).y;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      varying float vHeight;
-      void main() {
-        float horizonBlend = smoothstep(-0.2, 0.76, vHeight);
-        vec3 lowSky = vec3(0.74, 0.82, 0.9);
-        vec3 highSky = vec3(0.15, 0.31, 0.52);
-        vec3 sky = mix(lowSky, highSky, horizonBlend);
-        float glow = exp(-pow((vHeight - 0.08) * 8.0, 2.0));
-        sky = mix(sky, vec3(0.97, 0.83, 0.63), glow * 0.42);
-        gl_FragColor = vec4(sky, 1.0);
-        #include <tonemapping_fragment>
-        #include <colorspace_fragment>
-      }
-    `,
+  const poolWidth = 18;
+  const poolDepth = 15;
+  const poolBack = -8.5;
+  const poolFront = poolBack + poolDepth;
+  const poolFloor = -3.4;
+  const poolTop = 1.15;
+  const tileSize = 0.55;
+
+  scene.add(new THREE.HemisphereLight(0x8db6ce, 0x071419, 1.2));
+  const poolLight = new THREE.DirectionalLight(0xc3f5ff, 2.1);
+  poolLight.position.set(-5, 12, 8);
+  scene.add(poolLight);
+
+  const tileMaterial = new THREE.MeshStandardMaterial({
+    color: 0x174354,
+    roughness: 0.68,
+    metalness: 0.12,
+    side: THREE.DoubleSide,
   });
-  const sky = new THREE.Mesh(skyGeometry, skyMaterial);
-  scene.add(sky);
+  const floorGeometry = new THREE.PlaneGeometry(poolWidth, poolDepth);
+  floorGeometry.rotateX(-Math.PI / 2);
+  const floor = new THREE.Mesh(floorGeometry, tileMaterial);
+  floor.position.set(0, poolFloor, (poolBack + poolFront) / 2);
+  scene.add(floor);
+  disposableResources.push(floorGeometry);
 
-  function createRidge(z: number, color: number, profile: Array<[number, number]>) {
-    const shape = new THREE.Shape();
-    shape.moveTo(-220, -24);
-    shape.lineTo(-220, profile[0][1]);
-    shape.lineTo(profile[0][0], profile[0][1]);
+  const wallGeometry = new THREE.PlaneGeometry(poolWidth, poolTop - poolFloor);
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: 0x263e49,
+    roughness: 0.76,
+    metalness: 0.08,
+    side: THREE.DoubleSide,
+  });
+  const backWall = new THREE.Mesh(wallGeometry, wallMaterial);
+  backWall.position.set(0, (poolTop + poolFloor) / 2, poolBack);
+  scene.add(backWall);
+  const sideWallGeometry = new THREE.PlaneGeometry(poolDepth, poolTop - poolFloor);
+  const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+  leftWall.rotation.y = Math.PI / 2;
+  leftWall.position.set(-poolWidth / 2, (poolTop + poolFloor) / 2, (poolBack + poolFront) / 2);
+  scene.add(leftWall);
+  const rightWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
+  rightWall.rotation.y = Math.PI / 2;
+  rightWall.position.set(poolWidth / 2, (poolTop + poolFloor) / 2, (poolBack + poolFront) / 2);
+  scene.add(rightWall);
+  disposableResources.push(wallGeometry, sideWallGeometry, tileMaterial, wallMaterial);
 
-    for (let index = 0; index < profile.length - 1; index++) {
-      const current = profile[index];
-      const next = profile[index + 1];
-      const midpoint = (current[0] + next[0]) / 2;
-      shape.quadraticCurveTo(current[0] + (next[0] - current[0]) * 0.3, current[1], midpoint, (current[1] + next[1]) / 2);
-      shape.quadraticCurveTo(current[0] + (next[0] - current[0]) * 0.7, next[1], next[0], next[1]);
+  function addTileGrid(plane: "floor" | "back" | "side") {
+    const points: number[] = [];
+
+    function segment(ax: number, ay: number, az: number, bx: number, by: number, bz: number) {
+      points.push(ax, ay, az, bx, by, bz);
     }
 
-    shape.lineTo(220, -24);
-    shape.closePath();
-    const geometry = new THREE.ShapeGeometry(shape, 48);
-    const material = new THREE.MeshStandardMaterial({ color, roughness: 1, metalness: 0 });
+    if (plane === "floor") {
+      for (let x = -poolWidth / 2; x <= poolWidth / 2 + 0.001; x += tileSize) {
+        segment(x, poolFloor + 0.012, poolBack + 0.012, x, poolFloor + 0.012, poolFront - 0.012);
+      }
+      for (let z = poolBack; z <= poolFront + 0.001; z += tileSize) {
+        segment(-poolWidth / 2 + 0.012, poolFloor + 0.012, z, poolWidth / 2 - 0.012, poolFloor + 0.012, z);
+      }
+    } else if (plane === "back") {
+      for (let x = -poolWidth / 2; x <= poolWidth / 2 + 0.001; x += tileSize) {
+        segment(x, poolFloor, poolBack + 0.012, x, poolTop, poolBack + 0.012);
+      }
+      for (let y = poolFloor; y <= poolTop + 0.001; y += tileSize) {
+        segment(-poolWidth / 2, y, poolBack + 0.012, poolWidth / 2, y, poolBack + 0.012);
+      }
+    } else {
+      for (const x of [-poolWidth / 2, poolWidth / 2]) {
+        for (let z = poolBack; z <= poolFront + 0.001; z += tileSize) {
+          segment(x - Math.sign(x) * 0.012, poolFloor, z, x - Math.sign(x) * 0.012, poolTop, z);
+        }
+        for (let y = poolFloor; y <= poolTop + 0.001; y += tileSize) {
+          segment(x - Math.sign(x) * 0.012, y, poolBack, x - Math.sign(x) * 0.012, y, poolFront);
+        }
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: plane === "floor" ? 0x071d25 : 0x101e24,
+      transparent: true,
+      opacity: 0.74,
+    });
+    const grid = new THREE.LineSegments(geometry, material);
+    grid.renderOrder = 1;
+    scene.add(grid);
     disposableResources.push(geometry, material);
-    const ridge = new THREE.Mesh(geometry, material);
-    ridge.position.z = z;
-    scene.add(ridge);
   }
 
-  createRidge(-125, 0x849bb0, [
-    [-200, 1], [-174, 13], [-145, 8], [-111, 23], [-73, 7], [-42, 17], [-5, 4],
-    [35, 18], [68, 9], [104, 25], [141, 8], [178, 16], [220, 4],
-  ]);
-  createRidge(-115, 0x405c78, [
-    [-220, 0], [-184, 7], [-150, 3], [-118, 12], [-82, 2], [-46, 9], [-8, 1],
-    [24, 8], [62, 3], [98, 11], [136, 1], [169, 7], [220, 2],
-  ]);
+  addTileGrid("floor");
+  addTileGrid("back");
+  addTileGrid("side");
 
-  const sunDirection = new THREE.Vector3(32, 30, -115).normalize();
-  const sunGeometry = new THREE.SphereGeometry(4.2, 32, 24);
-  const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffe8c1, toneMapped: false });
-  disposableResources.push(sunGeometry, sunMaterial);
-  const sun = new THREE.Mesh(sunGeometry, sunMaterial);
-  sun.position.set(32, 30, -115);
-  scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0xb8d4f1, 0x182c42, 1.5));
-  const sunlight = new THREE.DirectionalLight(0xffe8c5, 2.2);
-  sunlight.position.copy(sunDirection).multiplyScalar(180);
-  scene.add(sunlight);
+  const rimMaterial = new THREE.MeshStandardMaterial({ color: 0x697b80, roughness: 0.58, metalness: 0.16 });
+  const rimGeometry = new THREE.BoxGeometry(poolWidth + 0.45, 0.22, 0.22);
+  const backRim = new THREE.Mesh(rimGeometry, rimMaterial);
+  backRim.position.set(0, poolTop + 0.05, poolBack);
+  scene.add(backRim);
+  const sideRimGeometry = new THREE.BoxGeometry(0.22, 0.22, poolDepth);
+  const leftRim = new THREE.Mesh(sideRimGeometry, rimMaterial);
+  leftRim.position.set(-poolWidth / 2, poolTop + 0.05, (poolBack + poolFront) / 2);
+  scene.add(leftRim);
+  const rightRim = new THREE.Mesh(sideRimGeometry, rimMaterial);
+  rightRim.position.set(poolWidth / 2, poolTop + 0.05, (poolBack + poolFront) / 2);
+  scene.add(rightRim);
+  disposableResources.push(rimGeometry, sideRimGeometry, rimMaterial);
 
-  const waterGeometry = new THREE.PlaneGeometry(900, 900);
+  const sphereGeometry = new THREE.SphereGeometry(1.3, 48, 32);
+  const sphereMaterial = new THREE.MeshStandardMaterial({
+    color: 0xe9eff0,
+    roughness: 0.24,
+    metalness: 0.04,
+  });
+  const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+  sphere.position.set(-0.6, 0.82, -1.2);
+  scene.add(sphere);
+  disposableResources.push(sphereGeometry, sphereMaterial);
+  const sphereRadius = 1.3;
+
+  const duck = new THREE.Group();
+  const duckBodyMaterial = new THREE.MeshStandardMaterial({ color: 0x89877b, roughness: 0.82 });
+  const duckBreastMaterial = new THREE.MeshStandardMaterial({ color: 0x75402d, roughness: 0.78 });
+  const duckWingMaterial = new THREE.MeshStandardMaterial({ color: 0x5d625f, roughness: 0.84 });
+  const duckSpeculumMaterial = new THREE.MeshStandardMaterial({ color: 0x174c64, roughness: 0.52, metalness: 0.12 });
+  const duckGreenMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x08734e,
+    roughness: 0.28,
+    metalness: 0.08,
+    iridescence: 0.42,
+    iridescenceIOR: 1.3,
+    iridescenceThicknessRange: [110, 380],
+  });
+  const duckCollarMaterial = new THREE.MeshStandardMaterial({ color: 0xe7e2ce, roughness: 0.62 });
+  const duckBillMaterial = new THREE.MeshStandardMaterial({ color: 0xe29a31, roughness: 0.48 });
+  const duckFeetMaterial = new THREE.MeshStandardMaterial({ color: 0xc7682d, roughness: 0.58 });
+  const duckEyeMaterial = new THREE.MeshStandardMaterial({ color: 0x101514, roughness: 0.24 });
+  const duckGeometries: THREE.BufferGeometry[] = [];
+  const duckHead = new THREE.Group();
+  const duckWings: THREE.Mesh[] = [];
+  const duckFeet: THREE.Mesh[] = [];
+  duck.add(duckHead);
+
+  function addDuckPart(
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    position: [number, number, number],
+    scale: [number, number, number],
+    parent: THREE.Group = duck,
+  ) {
+    const part = new THREE.Mesh(geometry, material);
+    part.position.set(...position);
+    part.scale.set(...scale);
+    parent.add(part);
+    duckGeometries.push(geometry);
+  }
+
+  addDuckPart(new THREE.SphereGeometry(0.5, 40, 28), duckBodyMaterial, [0, 0, 0.12], [0.68, 0.57, 1.12]);
+  addDuckPart(new THREE.SphereGeometry(0.43, 32, 24), duckBreastMaterial, [0, -0.015, -0.5], [0.64, 0.53, 0.59]);
+  duckHead.position.set(0, 0.39, -0.57);
+  addDuckPart(new THREE.SphereGeometry(0.28, 28, 18), duckGreenMaterial, [0, 0, 0], [0.43, 0.74, 0.43], duckHead);
+
+  const collarGeometry = new THREE.TorusGeometry(0.285, 0.043, 10, 36);
+  collarGeometry.rotateX(Math.PI / 2);
+  addDuckPart(collarGeometry, duckCollarMaterial, [0, 0.31, -0.57], [1, 1, 1]);
+
+  addDuckPart(new THREE.SphereGeometry(0.3, 36, 24), duckGreenMaterial, [0, 0.39, -0.16], [0.43, 0.43, 0.45], duckHead);
+  addDuckPart(new THREE.SphereGeometry(0.18, 24, 16), duckBillMaterial, [0, 0.29, -0.47], [0.78, 0.27, 1.12], duckHead);
+  addDuckPart(new THREE.SphereGeometry(0.32, 20, 14), duckWingMaterial, [-0.43, 0.13, 0.19], [0.32, 0.43, 0.77]);
+  addDuckPart(new THREE.SphereGeometry(0.32, 20, 14), duckWingMaterial, [0.43, 0.13, 0.19], [0.32, 0.43, 0.77]);
+  const leftWing = duck.children[duck.children.length - 2] as THREE.Mesh;
+  const rightWing = duck.children[duck.children.length - 1] as THREE.Mesh;
+  duckWings.push(leftWing, rightWing);
+  addDuckPart(new THREE.SphereGeometry(0.18, 20, 14), duckSpeculumMaterial, [-0.57, 0.17, 0.2], [0.11, 0.23, 0.4]);
+  addDuckPart(new THREE.SphereGeometry(0.18, 20, 14), duckSpeculumMaterial, [0.57, 0.17, 0.2], [0.11, 0.23, 0.4]);
+  addDuckPart(new THREE.SphereGeometry(0.18, 20, 14), duckCollarMaterial, [-0.59, 0.17, -0.07], [0.075, 0.24, 0.045]);
+  addDuckPart(new THREE.SphereGeometry(0.18, 20, 14), duckCollarMaterial, [0.59, 0.17, -0.07], [0.075, 0.24, 0.045]);
+  addDuckPart(new THREE.SphereGeometry(0.15, 20, 14), duckBodyMaterial, [0, 0.24, 1.05], [0.3, 0.33, 0.48]);
+
+  addDuckPart(new THREE.SphereGeometry(0.035, 14, 10), duckEyeMaterial, [-0.285, 0.47, -0.31], [1, 1, 0.8], duckHead);
+  addDuckPart(new THREE.SphereGeometry(0.035, 14, 10), duckEyeMaterial, [0.285, 0.47, -0.31], [1, 1, 0.8], duckHead);
+
+  const footGeometry = new THREE.SphereGeometry(0.22, 18, 12);
+  const leftFoot = new THREE.Mesh(footGeometry, duckFeetMaterial);
+  leftFoot.position.set(-0.25, -0.34, 0.35);
+  leftFoot.scale.set(0.55, 0.12, 1.1);
+  duck.add(leftFoot);
+  duckFeet.push(leftFoot);
+  const rightFoot = new THREE.Mesh(footGeometry, duckFeetMaterial);
+  rightFoot.position.set(0.25, -0.34, 0.35);
+  rightFoot.scale.set(0.55, 0.12, 1.1);
+  duck.add(rightFoot);
+  duckFeet.push(rightFoot);
+  duckGeometries.push(footGeometry);
+  duck.position.set(3.1, 0, -4.4);
+  scene.add(duck);
+  disposableResources.push(
+    ...duckGeometries,
+    duckBodyMaterial,
+    duckBreastMaterial,
+    duckWingMaterial,
+    duckSpeculumMaterial,
+    duckGreenMaterial,
+    duckCollarMaterial,
+    duckBillMaterial,
+    duckFeetMaterial,
+    duckEyeMaterial,
+  );
+  let duckWakeTimer = 0;
+  let duckVelocityX = 0;
+  let duckVelocityZ = 0;
+
+  const sunDirection = new THREE.Vector3(-0.46, 0.42, -0.65).normalize();
+  const waterSegments = 128;
+  const waterGridSize = waterSegments + 1;
+  const waterGeometry = new THREE.PlaneGeometry(poolWidth - 0.2, poolDepth - 0.2, waterSegments, waterSegments);
   disposableResources.push(waterGeometry);
   waterGeometry.rotateX(-Math.PI / 2);
+  const baseWaterPositions = new Float32Array(waterGeometry.attributes.position.array);
+  const surfaceHeightSamples = new Float32Array(waterGeometry.attributes.position.count);
+  let waterLevelOffset = 0;
   const water = new Water(waterGeometry, {
     textureWidth: 768,
     textureHeight: 512,
     waterNormals: normalTexture,
     sunDirection,
-    sunColor: 0xffe9c7,
-    waterColor: 0x0b3458,
-    distortionScale: 3.8,
+    sunColor: 0xa9edff,
+    waterColor: 0x0786a0,
+    distortionScale: 4.2,
     size: waveScale,
     clipBias: 0.002,
-    alpha: 1,
+    alpha: 0.84,
   });
-  water.position.y = 0;
+  water.material.transparent = true;
+  water.material.depthWrite = false;
+  water.material.uniforms.size.value = waveScale;
+  const scrollingNoise = /vec4 getNoise\( vec2 uv \) \{[\s\S]*?\n\t\t\t\t\}/;
+  if (!scrollingNoise.test(water.material.fragmentShader)) {
+  throw new Error("The water reflection shader no longer matches the ripple texture mapping.");
+  }
+  water.material.fragmentShader = water.material.fragmentShader.replace(
+  scrollingNoise,
+  `vec4 getNoise( vec2 uv ) {
+      vec2 surfaceUv = fract( uv / 103.0 );
+      return texture2D( normalSampler, surfaceUv ) * 2.0;
+    }`,
+  );
+  water.position.set(0, 0, (poolBack + poolFront) / 2);
   scene.add(water);
 
   let frame = 0;
@@ -254,10 +418,246 @@
   let previousFrameTime = 0;
   let animationFrame = 0;
   let rippleCount = 0;
+  let rippleImpactTimeout = 0;
+  const visualRipples: Array<{
+    geometry: THREE.BufferGeometry;
+    material: THREE.MeshBasicMaterial;
+    mesh: THREE.Mesh;
+    x: number;
+    z: number;
+    startedAt: number;
+  }> = [];
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
+  const dragPlane = new THREE.Plane();
+  const cameraDirection = new THREE.Vector3();
+  const dragIntersection = new THREE.Vector3();
+  const dragOffset = new THREE.Vector3();
+  const previousSpherePosition = new THREE.Vector3();
+  const sphereVelocity = new THREE.Vector3();
+  let sphereDragging = false;
+  let activePointerId: number | null = null;
+  let lastDragTime = 0;
+  let sphereWasInWater = true;
+  let sphereWaterDistance = 0;
 
   const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+  const wrapUnit = (value: number) => ((value % 1) + 1) % 1;
+  const rippleRadius = 4;
+  const rippleKernel: Array<{ column: number; row: number; positive: number; balancing: number }> = [];
+  let positiveRippleWeight = 0;
+  let balancingRippleWeight = 0;
+
+  for (let row = -rippleRadius * 3; row <= rippleRadius * 3; row++) {
+    for (let column = -rippleRadius * 3; column <= rippleRadius * 3; column++) {
+      const distanceSquared = column * column + row * row;
+      if (distanceSquared > rippleRadius * rippleRadius * 9) continue;
+
+      const positive = Math.exp(-distanceSquared / (rippleRadius * rippleRadius));
+      const balancing = Math.exp(-distanceSquared / (rippleRadius * rippleRadius * 9));
+      rippleKernel.push({ column, row, positive, balancing });
+      positiveRippleWeight += positive;
+      balancingRippleWeight += balancing;
+    }
+  }
+  const rippleBalance = positiveRippleWeight / balancingRippleWeight;
+
+  function sampleWaveHeight(worldX: number, worldZ: number) {
+    const textureX = wrapUnit(worldX / repeatDistance) * waveSize;
+    const textureY = wrapUnit(worldZ / repeatDistance) * waveSize;
+    const x0 = Math.floor(textureX) % waveSize;
+    const y0 = Math.floor(textureY) % waveSize;
+    const x1 = (x0 + 1) % waveSize;
+    const y1 = (y0 + 1) % waveSize;
+    const amountX = textureX - Math.floor(textureX);
+    const amountY = textureY - Math.floor(textureY);
+    const top = THREE.MathUtils.lerp(
+      waveData[y0 * waveSize + x0],
+      waveData[y0 * waveSize + x1],
+      amountX,
+    );
+    const bottom = THREE.MathUtils.lerp(
+      waveData[y1 * waveSize + x0],
+      waveData[y1 * waveSize + x1],
+      amountX,
+    );
+    const simulationHeight = THREE.MathUtils.lerp(top, bottom, amountY);
+    const phase = elapsed * (0.3 + wind * 0.8);
+    const u = textureX / waveSize;
+    const v = textureY / waveSize;
+    const windSwell =
+      Math.sin((u * 3 + v * 2) * Math.PI * 2 + phase) * 0.12 +
+      Math.sin((u * 5 - v * 3) * Math.PI * 2 - phase * 0.7) * 0.065;
+
+    return simulationHeight * 0.42 + windSwell - waterLevelOffset;
+  }
+
+  function setPointerFromClient(clientX: number, clientY: number) {
+    const bounds = canvas.getBoundingClientRect();
+    pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1;
+    pointer.y = -((clientY - bounds.top) / bounds.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+  }
+
+  function disturbWaterAt(worldX: number, worldZ: number, strength: number) {
+    addRipple(
+      wrapUnit(worldX / repeatDistance) * waveSize,
+      wrapUnit(worldZ / repeatDistance) * waveSize,
+      strength,
+      false,
+    );
+  }
+
+  function moveSphereWithPointer(event: PointerEvent) {
+    setPointerFromClient(event.clientX, event.clientY);
+    if (!raycaster.ray.intersectPlane(dragPlane, dragIntersection)) return;
+
+    const nextPosition = dragIntersection.add(dragOffset);
+    nextPosition.x = clamp(nextPosition.x, -poolWidth / 2 + sphereRadius, poolWidth / 2 - sphereRadius);
+    nextPosition.y = clamp(nextPosition.y, poolFloor + sphereRadius, poolTop + sphereRadius * 3);
+    nextPosition.z = clamp(nextPosition.z, poolBack + sphereRadius, poolFront - sphereRadius);
+    const movement = nextPosition.clone().sub(sphere.position);
+    const distance = movement.length();
+    const deltaTime = Math.max((event.timeStamp - lastDragTime) / 1000, 0.001);
+
+    sphereVelocity.lerp(movement.multiplyScalar(1 / deltaTime), 0.45);
+    if (sphereVelocity.length() > 12) sphereVelocity.setLength(12);
+    previousSpherePosition.copy(sphere.position);
+    sphere.position.copy(nextPosition);
+    lastDragTime = event.timeStamp;
+
+    interactWithWater(distance, sphere.position.y < sampleWaveHeight(sphere.position.x, sphere.position.z) + sphereRadius);
+  }
+
+  function interactWithWater(distance: number, inWater: boolean) {
+    if (inWater) {
+      sphereWaterDistance += distance;
+      while (sphereWaterDistance >= 0.38) {
+        const speed = sphereVelocity.length();
+        const speedXZ = Math.hypot(sphereVelocity.x, sphereVelocity.z);
+        const trailX = sphere.position.x - (sphereVelocity.x / Math.max(speedXZ, 0.001)) * sphereRadius * 0.72;
+        const trailZ = sphere.position.z - (sphereVelocity.z / Math.max(speedXZ, 0.001)) * sphereRadius * 0.72;
+        disturbWaterAt(trailX, trailZ, clamp(speed * 0.03, 0.07, 0.32));
+        sphereWaterDistance -= 0.38;
+      }
+
+      if (!sphereWasInWater) {
+        const impactStrength = clamp(Math.abs(sphereVelocity.y) * 0.13, 0.16, 1.1);
+        rippleAtWorld(sphere.position.x, sphere.position.z, impactStrength, false);
+      }
+    } else {
+      sphereWaterDistance = 0;
+    }
+
+    sphereWasInWater = inWater;
+  }
+
+  function updateFloatingSphere(delta: number) {
+    if (sphereDragging) return;
+
+    const waterHeight = sampleWaveHeight(sphere.position.x, sphere.position.z);
+    const submergedDepth = clamp(waterHeight + sphereRadius - sphere.position.y, 0, sphereRadius * 2);
+    const submergedFraction = submergedDepth * submergedDepth * (3 * sphereRadius - submergedDepth) /
+      (4 * sphereRadius * sphereRadius * sphereRadius);
+    sphereVelocity.y += (-9.8 + submergedFraction * 110 - sphereVelocity.y * (0.7 + submergedFraction * 4)) * delta;
+    sphereVelocity.x *= Math.exp(-(1.8 + submergedFraction * 3) * delta);
+    sphereVelocity.z *= Math.exp(-(1.8 + submergedFraction * 3) * delta);
+
+    const nextX = sphere.position.x + sphereVelocity.x * delta;
+    const nextY = sphere.position.y + sphereVelocity.y * delta;
+    const nextZ = sphere.position.z + sphereVelocity.z * delta;
+    const minX = -poolWidth / 2 + sphereRadius;
+    const maxX = poolWidth / 2 - sphereRadius;
+    const minZ = poolBack + sphereRadius;
+    const maxZ = poolFront - sphereRadius;
+
+    sphere.position.x = clamp(nextX, minX, maxX);
+    sphere.position.y = Math.max(nextY, poolFloor + sphereRadius);
+    sphere.position.z = clamp(nextZ, minZ, maxZ);
+    if (nextX < minX || nextX > maxX) sphereVelocity.x *= -0.32;
+    if (nextZ < minZ || nextZ > maxZ) sphereVelocity.z *= -0.32;
+
+    const currentWaterHeight = sampleWaveHeight(sphere.position.x, sphere.position.z);
+    const inWater = sphere.position.y < currentWaterHeight + sphereRadius;
+    interactWithWater(sphere.position.distanceTo(previousSpherePosition), inWater);
+    previousSpherePosition.copy(sphere.position);
+
+    sphere.rotation.x += (sphereVelocity.z / sphereRadius) * delta;
+    sphere.rotation.z -= (sphereVelocity.x / sphereRadius) * delta;
+  }
+
+  function updateDuck(delta: number) {
+    const previousX = duck.position.x;
+    const previousZ = duck.position.z;
+    const wanderPhase = elapsed * 0.11;
+    const targetX = 1.7 + Math.sin(wanderPhase) * 4.1 + Math.sin(wanderPhase * 0.43 + 0.8) * 0.65;
+    const targetZ = -2.6 + Math.sin(wanderPhase * 0.71 + 1.2) * 3.1 + Math.sin(wanderPhase * 0.37) * 0.55;
+    const desiredX = (targetX - duck.position.x) * 0.32;
+    const desiredZ = (targetZ - duck.position.z) * 0.32;
+    duckVelocityX = THREE.MathUtils.damp(duckVelocityX, desiredX, 0.65, delta);
+    duckVelocityZ = THREE.MathUtils.damp(duckVelocityZ, desiredZ, 0.65, delta);
+    const velocity = Math.hypot(duckVelocityX, duckVelocityZ);
+    const speedLimit = 0.78;
+    if (velocity > speedLimit) {
+      duckVelocityX = (duckVelocityX / velocity) * speedLimit;
+      duckVelocityZ = (duckVelocityZ / velocity) * speedLimit;
+    }
+
+    duck.position.x += duckVelocityX * delta;
+    duck.position.z += duckVelocityZ * delta;
+    duck.position.x = clamp(duck.position.x, -poolWidth / 2 + 1.2, poolWidth / 2 - 1.2);
+    duck.position.z = clamp(duck.position.z, poolBack + 1.2, poolFront - 1.2);
+    const heading = Math.atan2(duckVelocityX, -duckVelocityZ);
+    if (velocity > 0.03) duck.rotation.y = THREE.MathUtils.damp(duck.rotation.y, heading, 1.8, delta);
+    duck.position.y = sampleWaveHeight(duck.position.x, duck.position.z) + 0.08 +
+      Math.sin(elapsed * 2.1) * 0.025 + Math.sin(elapsed * 4.2 + 0.6) * 0.008;
+    duck.rotation.x = Math.sin(elapsed * 1.8 + 0.4) * 0.018;
+    duck.rotation.z = Math.sin(elapsed * 1.35) * 0.025;
+    duckHead.rotation.x = Math.sin(elapsed * 1.7 + 0.7) * 0.045;
+    duckHead.rotation.z = Math.sin(elapsed * 0.8) * 0.035;
+    duckWings[0].rotation.z = Math.sin(elapsed * 2.1) * 0.025;
+    duckWings[1].rotation.z = -Math.sin(elapsed * 2.1) * 0.025;
+    const paddle = Math.sin(elapsed * 5.2) * Math.min(velocity / 0.4, 1);
+    duckFeet[0].rotation.y = paddle * 0.48;
+    duckFeet[1].rotation.y = -paddle * 0.48;
+
+    const distance = Math.hypot(duck.position.x - previousX, duck.position.z - previousZ);
+    duckWakeTimer += delta;
+    if (duckWakeTimer >= 0.75 && distance > 0.001) {
+      const wakeX = duck.position.x + Math.sin(duck.rotation.y) * 0.72;
+      const wakeZ = duck.position.z + Math.cos(duck.rotation.y) * 0.72;
+      disturbWaterAt(wakeX, wakeZ, 0.075);
+      duckWakeTimer = 0;
+    }
+  }
+
+  function updateWaterSurface() {
+    const positions = waterGeometry.attributes.position;
+    let heightSum = 0;
+    let totalWeight = 0;
+
+    for (let index = 0; index < positions.count; index++) {
+      const worldX = baseWaterPositions[index * 3];
+      const worldZ = baseWaterPositions[index * 3 + 2] + water.position.z;
+      const height = sampleWaveHeight(worldX, worldZ);
+      surfaceHeightSamples[index] = height;
+      const column = index % waterGridSize;
+      const row = Math.floor(index / waterGridSize);
+      const weight = (column === 0 || column === waterSegments ? 0.5 : 1) *
+        (row === 0 || row === waterSegments ? 0.5 : 1);
+      heightSum += height * weight;
+      totalWeight += weight;
+    }
+
+    const meanHeight = heightSum / totalWeight;
+    waterLevelOffset += meanHeight;
+    for (let index = 0; index < positions.count; index++) {
+      positions.setY(index, surfaceHeightSamples[index] - meanHeight);
+    }
+
+    positions.needsUpdate = true;
+    waterGeometry.computeVertexNormals();
+  }
 
   function resize() {
     const bounds = stage.getBoundingClientRect();
@@ -271,21 +671,83 @@
   }
 
   function addRipple(x: number, y: number, strength: number, announce = true) {
-    const radius = 4;
-    for (let row = -radius * 3; row <= radius * 3; row++) {
-      for (let column = -radius * 3; column <= radius * 3; column++) {
-        const distanceSquared = column * column + row * row;
-        if (distanceSquared > radius * radius * 9) continue;
-        const wrappedX = (Math.round(x + column) + waveSize) % waveSize;
-        const wrappedY = (Math.round(y + row) + waveSize) % waveSize;
-        const index = wrappedY * waveSize + wrappedX;
-        waveData[index] += strength * Math.exp(-distanceSquared / (radius * radius));
-      }
+    for (const sample of rippleKernel) {
+      const wrappedX = (Math.round(x + sample.column) + waveSize) % waveSize;
+      const wrappedY = (Math.round(y + sample.row) + waveSize) % waveSize;
+      const index = wrappedY * waveSize + wrappedX;
+      waveData[index] += strength * (sample.positive - rippleBalance * sample.balancing);
     }
 
     if (announce) {
       rippleCount++;
       hint.textContent = `Ripple ${rippleCount} added — tap again or change the wind`;
+    }
+  }
+
+  function addRippleRing(x: number, z: number) {
+    const geometry = new THREE.RingGeometry(0.84, 1, 80);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xbaf8ff,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = 3;
+    scene.add(mesh);
+    visualRipples.push({ geometry, material, mesh, x, z, startedAt: elapsed });
+
+    while (visualRipples.length > 24) {
+      const oldest = visualRipples.shift();
+      if (!oldest) continue;
+      scene.remove(oldest.mesh);
+      oldest.geometry.dispose();
+      oldest.material.dispose();
+    }
+
+    disposableResources.push(geometry, material);
+  }
+
+  function rippleAtWorld(x: number, z: number, strength: number, announce = true, impactPosition?: { x: number; y: number }) {
+    const textureX = Math.floor(wrapUnit(x / repeatDistance) * waveSize);
+    const textureY = Math.floor(wrapUnit(z / repeatDistance) * waveSize);
+    addRipple(textureX, textureY, strength, announce);
+    addRippleRing(x, z);
+    if (announce && impactPosition) showRippleImpact(impactPosition.x, impactPosition.y);
+  }
+
+  function showRippleImpact(clientX: number, clientY: number) {
+    const stageBounds = stage.getBoundingClientRect();
+
+    rippleImpact.style.left = `${clientX - stageBounds.left}px`;
+    rippleImpact.style.top = `${clientY - stageBounds.top}px`;
+    rippleImpact.classList.remove("active");
+    void rippleImpact.offsetWidth;
+    rippleImpact.classList.add("active");
+    window.clearTimeout(rippleImpactTimeout);
+    rippleImpactTimeout = window.setTimeout(() => rippleImpact.classList.remove("active"), 1400);
+  }
+
+  function updateRippleRings() {
+    for (let index = visualRipples.length - 1; index >= 0; index--) {
+      const ripple = visualRipples[index];
+      const age = elapsed - ripple.startedAt;
+      const lifetime = 1.8;
+      if (age >= lifetime) {
+        scene.remove(ripple.mesh);
+        ripple.geometry.dispose();
+        ripple.material.dispose();
+        visualRipples.splice(index, 1);
+        continue;
+      }
+
+      const progress = age / lifetime;
+      const radius = 0.24 + progress * 2.7;
+      ripple.mesh.position.set(ripple.x, sampleWaveHeight(ripple.x, ripple.z) + 0.13, ripple.z);
+      ripple.mesh.scale.setScalar(radius);
+      ripple.material.opacity = 0.85 * (1 - progress) ** 1.4;
     }
   }
 
@@ -321,6 +783,20 @@
     previousWaveData.set(waveData);
     waveData.set(nextWaveData);
     nextWaveData.set(oldPrevious);
+
+    // Keep the periodic wave field at its baseline so impulses cannot add water volume.
+    let currentMean = 0;
+    let previousMean = 0;
+    for (let index = 0; index < waveData.length; index++) {
+      currentMean += waveData[index];
+      previousMean += previousWaveData[index];
+    }
+    currentMean /= waveData.length;
+    previousMean /= previousWaveData.length;
+    for (let index = 0; index < waveData.length; index++) {
+      waveData[index] -= currentMean;
+      previousWaveData[index] -= previousMean;
+    }
   }
 
   function updateNormalTexture() {
@@ -332,9 +808,9 @@
       const v = sampleY / waveSize;
       const index = sampleY * waveSize + sampleX;
 
-      return waveData[index] * 0.7 +
-        Math.sin((u * 3 + v * 2) * Math.PI * 2 + phase) * 0.22 +
-        Math.sin((u * 5 - v * 3) * Math.PI * 2 - phase * 0.7) * 0.12;
+      return waveData[index] * 0.42 +
+        Math.sin((u * 3 + v * 2) * Math.PI * 2 + phase) * 0.12 +
+        Math.sin((u * 5 - v * 3) * Math.PI * 2 - phase * 0.7) * 0.065;
     };
 
     for (let y = 0; y < waveSize; y++) {
@@ -381,33 +857,72 @@
     frame++;
     makeWindRipple();
     updateWaves();
+    updateWaterSurface();
+    updateFloatingSphere(delta);
+    updateDuck(delta);
     updateNormalTexture();
+    updateRippleRings();
     water.material.uniforms.time.value += delta * (0.2 + wind * 0.8);
     renderer.render(scene, camera);
     animationFrame = window.requestAnimationFrame(animate);
   }
 
   function dropAt(clientX: number, clientY: number, strength: number) {
-    const bounds = canvas.getBoundingClientRect();
-    pointer.x = ((clientX - bounds.left) / bounds.width) * 2 - 1;
-    pointer.y = -((clientY - bounds.top) / bounds.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
+    setPointerFromClient(clientX, clientY);
     const intersection = raycaster.intersectObject(water, false)[0];
     if (!intersection) return;
 
-    const repeatDistance = 103 / waveScale;
-    const wrap = (value: number) => ((value / repeatDistance) % 1 + 1) % 1;
-    addRipple(
-      Math.floor(wrap(intersection.point.x) * waveSize),
-      Math.floor(wrap(intersection.point.z) * waveSize),
-      strength,
-    );
+    rippleAtWorld(intersection.point.x, intersection.point.z, strength, true, { x: clientX, y: clientY });
   }
 
   canvas.addEventListener("pointerdown", (event) => {
     event.preventDefault();
+    setPointerFromClient(event.clientX, event.clientY);
+
+    const sphereHit = raycaster.intersectObject(sphere, false)[0];
+    if (sphereHit) {
+      camera.getWorldDirection(cameraDirection);
+      dragPlane.setFromNormalAndCoplanarPoint(cameraDirection, sphereHit.point);
+      if (raycaster.ray.intersectPlane(dragPlane, dragIntersection)) {
+        sphereDragging = true;
+        activePointerId = event.pointerId;
+        dragOffset.copy(sphere.position).sub(dragIntersection);
+        sphereVelocity.set(0, 0, 0);
+        previousSpherePosition.copy(sphere.position);
+        lastDragTime = event.timeStamp;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.style.cursor = "grabbing";
+        return;
+      }
+    }
+
     dropAt(event.clientX, event.clientY, 1.65);
   });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (sphereDragging && event.pointerId === activePointerId) {
+      moveSphereWithPointer(event);
+      return;
+    }
+
+    setPointerFromClient(event.clientX, event.clientY);
+    canvas.style.cursor = raycaster.intersectObject(sphere, false).length ? "grab" : "crosshair";
+  });
+
+  function releaseSphere(event: PointerEvent) {
+    if (!sphereDragging || event.pointerId !== activePointerId) return;
+
+    sphereDragging = false;
+    activePointerId = null;
+    if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    canvas.style.cursor = "grab";
+    sphereVelocity.y = Math.min(sphereVelocity.y, 1.2);
+    if (sphereVelocity.length() > 6) sphereVelocity.setLength(6);
+    previousSpherePosition.copy(sphere.position);
+  }
+
+  canvas.addEventListener("pointerup", releaseSphere);
+  canvas.addEventListener("pointercancel", releaseSphere);
 
   dropButton.addEventListener("click", () => {
     const bounds = canvas.getBoundingClientRect();
@@ -422,17 +937,16 @@
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(stage);
   resize();
-  addRipple(waveSize * 0.5, waveSize * 0.54, 0.65, false);
+  rippleAtWorld(0, (poolBack + poolFront) / 2, 0.65, false);
   animationFrame = window.requestAnimationFrame(animate);
 
   function dispose() {
     window.cancelAnimationFrame(animationFrame);
+    window.clearTimeout(rippleImpactTimeout);
     resizeObserver.disconnect();
     normalTexture.dispose();
     for (const resource of disposableResources) resource.dispose();
     water.material.dispose();
-    skyGeometry.dispose();
-    skyMaterial.dispose();
     renderer.dispose();
   }
 
@@ -473,6 +987,11 @@
   .live-dot { width: 7px; height: 7px; background: #4a9b91; box-shadow: 0 0 0 4px rgba(74, 155, 145, .13); }
   .water-stage { position: relative; height: clamp(300px, 48vw, 520px); overflow: hidden; border: 1px solid #c8d7e8; border-radius: 7px; background: #112e50; }
   #water { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+  #ripple-impact { position: absolute; z-index: 1; width: 42px; height: 42px; pointer-events: none; transform: translate(-50%, -50%); }
+  #ripple-impact::before, #ripple-impact::after { position: absolute; inset: 0; border: 1px solid rgba(207, 250, 255, .95); border-radius: 50%; box-shadow: 0 0 14px rgba(109, 232, 255, .65), inset 0 0 9px rgba(109, 232, 255, .2); content: ""; opacity: 0; }
+  #ripple-impact.active::before, #ripple-impact.active::after { animation: ripple-pulse 1.1s ease-out both; }
+  #ripple-impact.active::after { animation-delay: .16s; }
+  @keyframes ripple-pulse { 0% { opacity: .95; transform: scale(.12); } 75% { opacity: .55; } 100% { opacity: 0; transform: scale(2.8); } }
   .scene-hint { position: absolute; right: 16px; bottom: 13px; margin: 0; padding: 7px 11px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(15, 35, 60, .55); color: #f4f8ff; font-size: .7rem; pointer-events: none; backdrop-filter: blur(8px); }
   .controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 19px 0 0; }
   .wind-control { width: min(100%, 300px); }
@@ -515,5 +1034,6 @@
   @media (prefers-reduced-motion: reduce) {
     :global(html) { scroll-behavior: auto; }
     *, *::before, *::after { transition-duration: .01ms !important; }
+    #ripple-impact.active::before, #ripple-impact.active::after { animation-duration: .01ms; }
   }
 </style>
