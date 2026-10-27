@@ -3,19 +3,9 @@
 const projects = [
   {
     title: "Interactive Water",
-    description: "A wave simulation with ripples, changing wind, and reflected light.",
+    description: "Explore a living water simulation with a steerable sailboat, swimming fish, and a randomized shoreline lit by a real-world HDR environment.",
     status: "Live experiment",
     href: "/projects/water/",
-  },
-  {
-    title: "Engineering Toolbox",
-    description: "Interactive utilities and calculators for electronics, measurement, and prototyping.",
-    status: "In development",
-  },
-  {
-    title: "Build in Public",
-    description: "Side projects, prototypes, and experiments that turn curiosity into learning.",
-    status: "Ongoing",
   },
 ];
 ---
@@ -73,16 +63,16 @@ const projects = [
             <p class="eyebrow">A WORK IN PROGRESS, BY DESIGN</p>
             <h2>Currently curious about<span>.</span></h2>
           </div>
-          <p class="section-note">A few directions I'm exploring.<br />More experiments are always underway.</p>
+          <p class="section-note">The first experiment is live.<br />More projects will appear as they're ready.</p>
         </div>
         <div class="projects">
           {projects.map((project, index) => (
             <article class={`project project-${index + 1}`}>
               <div class="project-topline">
-                <p class="number">0{index + 1} <span>/ 03</span></p>
+                <p class="number">0{index + 1} <span>/ 0{projects.length}</span></p>
                 <span class="project-arrow" aria-hidden="true">↗</span>
               </div>
-              <div class="project-icon" aria-hidden="true">{index === 0 ? "✳" : index === 1 ? "⌁" : "↗"}</div>
+              <div class="project-icon" aria-hidden="true">✳</div>
               <h3>{project.title}</h3>
               <p class="project-description">{project.description}</p>
               {project.href && <a class="project-visit" href={project.href}>Explore the simulation <span aria-hidden="true">↗</span></a>}
@@ -279,7 +269,7 @@ const projects = [
   }
   .section-heading h2 span { color: #3468f5; }
   .section-note { margin: 0 0 3px; color: #71819a; font-size: .8rem; line-height: 1.65; }
-  .projects { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 35px; }
+  .projects { display: grid; grid-template-columns: minmax(0, 420px); gap: 16px; margin-top: 35px; }
   .project {
     position: relative;
     min-height: 302px;
@@ -313,7 +303,6 @@ const projects = [
     font-size: 1.4rem;
   }
   .project-1 .project-icon { background: #adc4ff; color: #14233b; }
-  .project-3 .project-icon { background: #d8e8ff; }
   h3 { margin: 0 0 7px; font-size: 1.24rem; line-height: 1.2; letter-spacing: -.04em; }
   .project-description { max-width: 300px; margin: 0 0 16px; color: #71819a; font-size: .82rem; line-height: 1.65; }
   .project-1 .project-description { color: #c0cde0; }
@@ -347,8 +336,7 @@ const projects = [
     h1 { font-size: clamp(3.7rem, 8vw, 5.4rem); }
     .hero-art { min-height: 350px; }
     .orbit-one, .orbit-two { width: 250px; height: 140px; }
-    .projects { grid-template-columns: 1fr 1fr; }
-    .project:last-child { grid-column: span 2; min-height: 250px; }
+    .projects { grid-template-columns: 1fr; }
   }
   @media (max-width: 560px) {
     main { padding: 0 20px; }
