@@ -28,8 +28,8 @@
         <p class="eyebrow"><span class="eyebrow-mark"></span> EXPERIMENT 001 · PHYSICS & GRAPHICS</p>
         <h1>Water,<br /><span>in motion.</span></h1>
         <p class="lead">
-          Steer a little sailboat through a living water simulation, framed by detailed
-          shoreline models and an HDRI sky. Watch the wildlife swim, and catch a fish leaping
+          Every visit generates a new freeform basin and shoreline. Steer a little sailboat
+          through the changing world, watch the wildlife swim, and catch a fish leaping
           from the water now and then.
         </p>
       </section>
@@ -137,10 +137,124 @@
   }
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(0xb9c9c5, 34, 74);
+  const poolWidth = THREE.MathUtils.randFloat(15, 21);
+  const poolDepth = THREE.MathUtils.randFloat(12, 18);
+  const poolBack = -poolDepth / 2;
+  const poolFront = poolDepth / 2;
+  const poolFloor = -THREE.MathUtils.randFloat(3.1, 4.1);
+  const poolTop = THREE.MathUtils.randFloat(0.95, 1.3);
+  const shorelineWidths = {
+    back: THREE.MathUtils.randFloat(4, 7.5),
+    front: THREE.MathUtils.randFloat(4, 7.5),
+    left: THREE.MathUtils.randFloat(4, 7.5),
+    right: THREE.MathUtils.randFloat(4, 7.5),
+  };
+  const shorelinePhase = Math.random() * Math.PI * 2;
+  const shorelineSecondPhase = Math.random() * Math.PI * 2;
+  const poolShapePhase = Math.random() * Math.PI * 2;
+  const poolShapeStrength = THREE.MathUtils.randFloat(0.08, 0.17);
+  const worldWidth = poolWidth + Math.max(shorelineWidths.left, shorelineWidths.right) * poolWidth / Math.min(poolWidth, poolDepth) * 2 + 4;
+  const worldDepth = poolDepth + Math.max(shorelineWidths.back, shorelineWidths.front) * poolDepth / Math.min(poolWidth, poolDepth) * 2 + 4;
+  const worldSpan = Math.max(worldWidth, worldDepth);
+  function poolShapeFactor(angle: number) {
+    return 1 +
+      Math.sin(angle * 2 + poolShapePhase) * poolShapeStrength +
+      Math.sin(angle * 3 - poolShapePhase * 0.7) * poolShapeStrength * 0.32;
+  }
+  function shoreShapeFactor(angle: number) {
+    const directionalWidth = (Math.abs(Math.cos(angle)) * (Math.cos(angle) > 0 ? shorelineWidths.right : shorelineWidths.left) +
+      Math.abs(Math.sin(angle)) * (Math.sin(angle) > 0 ? shorelineWidths.front : shorelineWidths.back));
+    const undulation = 0.75 + 0.2 * Math.sin(angle * 3 + shorelinePhase) +
+      0.12 * Math.sin(angle * 5 + shorelineSecondPhase);
+    return poolShapeFactor(angle) + directionalWidth * undulation / Math.min(poolWidth, poolDepth) * 2;
+  }
+  function poolPoint(angle: number, factor = poolShapeFactor(angle)) {
+    return new THREE.Vector3(
+      Math.cos(angle) * poolWidth * 0.5 * factor,
+      0,
+      Math.sin(angle) * poolDepth * 0.5 * factor,
+    );
+  }
+  function poolBoundaryFactor(angle: number, margin = 0) {
+    const radialMargin = margin / Math.min(poolWidth, poolDepth) * 2;
+    return Math.max(0, poolShapeFactor(angle) - radialMargin);
+  }
+  function poolFloorHeight(x: number, z: number) {
+    const angle = Math.atan2(z / (poolDepth * 0.5), x / (poolWidth * 0.5));
+    const radius = Math.hypot(x / (poolWidth * 0.5), z / (poolDepth * 0.5));
+    const slope = THREE.MathUtils.smoothstep(radius / poolShapeFactor(angle), 0.58, 0.965);
+    return THREE.MathUtils.lerp(poolFloor, -0.035, slope);
+  }
+  function poolWaveEdgeFade(x: number, z: number) {
+    const angle = Math.atan2(z / (poolDepth * 0.5), x / (poolWidth * 0.5));
+    const radius = Math.hypot(x / (poolWidth * 0.5), z / (poolDepth * 0.5));
+    return THREE.MathUtils.smoothstep(poolShapeFactor(angle) - radius, -0.015, 0.14);
+  }
+  function keepInsidePool(position: THREE.Vector3, margin = 0) {
+    const angle = Math.atan2(position.z / (poolDepth * 0.5), position.x / (poolWidth * 0.5));
+    const limit = poolBoundaryFactor(angle, margin);
+    const radial = Math.hypot(position.x / (poolWidth * 0.5), position.z / (poolDepth * 0.5));
+    if (radial > limit) {
+      const scale = limit / Math.max(radial, 0.001);
+      position.x *= scale;
+      position.z *= scale;
+    }
+    return position;
+  }
+  function makeRadialGeometry(
+    innerFactor: (angle: number) => number,
+    outerFactor: (angle: number) => number,
+    radialSegments: number,
+    angularSegments: number,
+    height: (x: number, z: number) => number,
+    fillCenter = true,
+  ) {
+    const positions: number[] = [0, height(0, 0), 0];
+    const uvs: number[] = [0.5, 0.5];
+    const indices: number[] = [];
+    const firstRing = fillCenter ? 1 : 0;
+    for (let ring = firstRing; ring <= radialSegments; ring++) {
+      const progress = ring / radialSegments;
+      for (let segment = 0; segment < angularSegments; segment++) {
+        const angle = (segment / angularSegments) * Math.PI * 2;
+        const radius = THREE.MathUtils.lerp(innerFactor(angle), outerFactor(angle), progress);
+        const point = poolPoint(angle, radius);
+        positions.push(point.x, height(point.x, point.z), point.z);
+        uvs.push(0.5 + point.x / worldWidth, 0.5 + point.z / worldDepth);
+      }
+    }
+
+    if (fillCenter) {
+      for (let segment = 0; segment < angularSegments; segment++) {
+        const next = (segment + 1) % angularSegments;
+        indices.push(0, 1 + next, 1 + segment);
+      }
+    }
+    for (let ring = firstRing; ring < radialSegments; ring++) {
+      const currentStart = 1 + (ring - firstRing) * angularSegments;
+      const nextStart = currentStart + angularSegments;
+      for (let segment = 0; segment < angularSegments; segment++) {
+        const next = (segment + 1) % angularSegments;
+        const a = currentStart + segment;
+        const b = currentStart + next;
+        const c = nextStart + segment;
+        const d = nextStart + next;
+        indices.push(a, b, c, b, d, c);
+      }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+  scene.fog = new THREE.Fog(0xb9c9c5, worldSpan * 1.2, worldSpan * 2.65);
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 180);
-  const cameraTarget = new THREE.Vector3(0, -1.2, -1);
-  camera.position.set(10, 9.5, 14);
+  const cameraTarget = new THREE.Vector3(0, -1.2, 0);
+  const cameraOffset = new THREE.Vector3(0.48, 0.52, 0.72).normalize().multiplyScalar(worldSpan * 0.78);
+  camera.position.copy(cameraTarget).add(cameraOffset);
   camera.lookAt(cameraTarget);
   const cameraSpherical = new THREE.Spherical().setFromVector3(camera.position.clone().sub(cameraTarget));
   const waveSize = 128;
@@ -192,12 +306,6 @@
   normalTexture.colorSpace = THREE.NoColorSpace;
   normalTexture.needsUpdate = true;
 
-  const poolWidth = 18;
-  const poolDepth = 15;
-  const poolBack = -8.5;
-  const poolFront = poolBack + poolDepth;
-  const poolFloor = -3.4;
-  const poolTop = 1.15;
   const tileCanvas = document.createElement("canvas");
   tileCanvas.width = 512;
   tileCanvas.height = 512;
@@ -238,60 +346,43 @@
     map: tileTexture,
     roughness: 0.42,
     metalness: 0.03,
+    vertexColors: true,
     side: THREE.DoubleSide,
   });
-  const floorGeometry = new THREE.PlaneGeometry(poolWidth, poolDepth);
-  floorGeometry.rotateX(-Math.PI / 2);
+  const floorGeometry = makeRadialGeometry(
+    () => 0,
+    (angle) => poolShapeFactor(angle) + 0.01,
+    36,
+    160,
+    poolFloorHeight,
+  );
+  const floorPositions = floorGeometry.attributes.position;
+  const floorColors = new Float32Array(floorPositions.count * 3);
+  const deepFloorTint = new THREE.Color(0x95a39b);
+  const shoreFloorTint = new THREE.Color(0x8f8369);
+  const floorTint = new THREE.Color();
+  for (let index = 0; index < floorPositions.count; index++) {
+    const x = floorPositions.getX(index);
+    const z = floorPositions.getZ(index);
+    const angle = Math.atan2(z / (poolDepth * 0.5), x / (poolWidth * 0.5));
+    const radius = Math.hypot(x / (poolWidth * 0.5), z / (poolDepth * 0.5));
+    const shoreBlend = THREE.MathUtils.smoothstep(radius / poolShapeFactor(angle), 0.62, 0.98);
+    floorTint.copy(deepFloorTint).lerp(shoreFloorTint, shoreBlend);
+    floorTint.toArray(floorColors, index * 3);
+  }
+  floorGeometry.setAttribute("color", new THREE.Float32BufferAttribute(floorColors, 3));
   const floor = new THREE.Mesh(floorGeometry, tileMaterial);
-  floor.position.set(0, poolFloor, (poolBack + poolFront) / 2);
   floor.receiveShadow = true;
   scene.add(floor);
   disposableResources.push(floorGeometry);
 
-  const wallGeometry = new THREE.PlaneGeometry(poolWidth, poolTop - poolFloor);
-  const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x263e49,
-    roughness: 0.76,
-    metalness: 0.08,
-    side: THREE.DoubleSide,
-  });
-  const backWall = new THREE.Mesh(wallGeometry, wallMaterial);
-  backWall.position.set(0, (poolTop + poolFloor) / 2, poolBack);
-  backWall.receiveShadow = true;
-  scene.add(backWall);
-  const sideWallGeometry = new THREE.PlaneGeometry(poolDepth, poolTop - poolFloor);
-  const leftWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
-  leftWall.rotation.y = Math.PI / 2;
-  leftWall.position.set(-poolWidth / 2, (poolTop + poolFloor) / 2, (poolBack + poolFront) / 2);
-  scene.add(leftWall);
-  const rightWall = new THREE.Mesh(sideWallGeometry, wallMaterial);
-  rightWall.rotation.y = Math.PI / 2;
-  rightWall.position.set(poolWidth / 2, (poolTop + poolFloor) / 2, (poolBack + poolFront) / 2);
-  scene.add(rightWall);
-  disposableResources.push(wallGeometry, sideWallGeometry, tileMaterial, tileTexture, wallMaterial);
-
-  const rimMaterial = new THREE.MeshStandardMaterial({ color: 0x697b80, roughness: 0.58, metalness: 0.16 });
-  const rimGeometry = new THREE.BoxGeometry(poolWidth + 0.45, 0.22, 0.22);
-  const backRim = new THREE.Mesh(rimGeometry, rimMaterial);
-  backRim.position.set(0, poolTop + 0.05, poolBack);
-  scene.add(backRim);
-  const sideRimGeometry = new THREE.BoxGeometry(0.22, 0.22, poolDepth);
-  const leftRim = new THREE.Mesh(sideRimGeometry, rimMaterial);
-  leftRim.position.set(-poolWidth / 2, poolTop + 0.05, (poolBack + poolFront) / 2);
-  leftRim.castShadow = true;
-  scene.add(leftRim);
-  const rightRim = new THREE.Mesh(sideRimGeometry, rimMaterial);
-  rightRim.position.set(poolWidth / 2, poolTop + 0.05, (poolBack + poolFront) / 2);
-  rightRim.castShadow = true;
-  scene.add(rightRim);
-  disposableResources.push(rimGeometry, sideRimGeometry, rimMaterial);
-
-  const landSurfaceY = poolTop - 0.06;
+  disposableResources.push(tileMaterial, tileTexture);
+  const landSurfaceY = THREE.MathUtils.randFloat(0.14, 0.24);
   const landZones = [
-    { minX: -poolWidth / 2, maxX: poolWidth / 2, minZ: poolBack - 5, maxZ: poolBack, width: poolWidth, depth: 5 },
-    { minX: -poolWidth / 2, maxX: poolWidth / 2, minZ: poolFront, maxZ: poolFront + 5, width: poolWidth, depth: 5 },
-    { minX: -poolWidth / 2 - 5, maxX: -poolWidth / 2, minZ: poolBack, maxZ: poolFront, width: 5, depth: poolDepth },
-    { minX: poolWidth / 2, maxX: poolWidth / 2 + 5, minZ: poolBack, maxZ: poolFront, width: 5, depth: poolDepth },
+    { angleStart: 0, angleEnd: Math.PI / 2, width: worldWidth / 2, depth: worldDepth / 2 },
+    { angleStart: Math.PI / 2, angleEnd: Math.PI, width: worldWidth / 2, depth: worldDepth / 2 },
+    { angleStart: Math.PI, angleEnd: Math.PI * 1.5, width: worldWidth / 2, depth: worldDepth / 2 },
+    { angleStart: Math.PI * 1.5, angleEnd: Math.PI * 2, width: worldWidth / 2, depth: worldDepth / 2 },
   ];
   const barkCanvas = document.createElement("canvas");
   barkCanvas.width = 256;
@@ -411,33 +502,77 @@
     new THREE.MeshStandardMaterial({ color: 0xc3cf9f, map: grassTexture, roughness: 0.98 }),
     new THREE.MeshStandardMaterial({ color: 0x91a67f, map: grassTexture, roughness: 0.98 }),
   ];
-  const grassGeometries = landZones.map((zone) => {
-    const { width, depth } = zone;
-    const geometry = new THREE.PlaneGeometry(width, depth, 18, 8);
-    geometry.rotateX(-Math.PI / 2);
-    const positions = geometry.attributes.position;
-    const centerX = (zone.minX + zone.maxX) / 2;
-    const centerZ = (zone.minZ + zone.maxZ) / 2;
-    for (let index = 0; index < positions.count; index++) {
-      const worldX = centerX + positions.getX(index);
-      const worldZ = centerZ + positions.getZ(index);
-      positions.setY(
-        index,
-        Math.sin(worldX * 0.38) * 0.035 +
-          Math.sin(worldZ * 0.43) * 0.035 +
-          Math.sin((worldX + worldZ) * 0.68) * 0.025,
+  const shoreCanvas = document.createElement("canvas");
+  shoreCanvas.width = 512;
+  shoreCanvas.height = 512;
+  const shoreContext = shoreCanvas.getContext("2d");
+  if (!shoreContext) throw new Error("The shoreline texture could not be created.");
+  shoreContext.fillStyle = "#8c8061";
+  shoreContext.fillRect(0, 0, shoreCanvas.width, shoreCanvas.height);
+  for (let grain = 0; grain < 5200; grain++) {
+    const shade = Math.floor(88 + Math.random() * 82);
+    shoreContext.fillStyle = `rgba(${shade}, ${shade * 0.91}, ${shade * 0.7}, ${0.08 + Math.random() * 0.2})`;
+    shoreContext.beginPath();
+    shoreContext.ellipse(
+      Math.random() * shoreCanvas.width,
+      Math.random() * shoreCanvas.height,
+      1 + Math.random() * 3.2,
+      0.8 + Math.random() * 2.2,
+      Math.random() * Math.PI,
+      0,
+      Math.PI * 2,
+    );
+    shoreContext.fill();
+  }
+  const shoreTexture = new THREE.CanvasTexture(shoreCanvas);
+  shoreTexture.colorSpace = THREE.SRGBColorSpace;
+  shoreTexture.wrapS = THREE.RepeatWrapping;
+  shoreTexture.wrapT = THREE.RepeatWrapping;
+  shoreTexture.repeat.set(3, 3);
+  const shoreMaterial = new THREE.MeshStandardMaterial({
+    color: 0xa99976,
+    map: shoreTexture,
+    roughness: 0.96,
+    side: THREE.DoubleSide,
+  });
+  const beachGeometry = makeRadialGeometry(
+    (angle) => poolShapeFactor(angle) - 0.035,
+    (angle) => poolShapeFactor(angle) + 0.09,
+    10,
+    160,
+    (x, z) => {
+      const angle = Math.atan2(z / (poolDepth / 2), x / (poolWidth / 2));
+      const radius = Math.hypot(x / (poolWidth / 2), z / (poolDepth / 2));
+      const slope = THREE.MathUtils.smoothstep(
+        (radius - (poolShapeFactor(angle) - 0.035)) / 0.125,
+        0,
+        1,
       );
-    }
-    positions.needsUpdate = true;
-    geometry.computeVertexNormals();
-    return geometry;
-  });
-  landZones.forEach((zone, index) => {
-    const land = new THREE.Mesh(grassGeometries[index], grassMaterials[index % grassMaterials.length]);
-    land.position.set((zone.minX + zone.maxX) / 2, landSurfaceY, (zone.minZ + zone.maxZ) / 2);
-    land.receiveShadow = true;
-    scene.add(land);
-  });
+      const terrainVariation =
+        Math.sin(x * 0.38) * 0.035 +
+        Math.sin(z * 0.43) * 0.035 +
+        Math.sin((x + z) * 0.68) * 0.025;
+      return THREE.MathUtils.lerp(-0.035, landSurfaceY + terrainVariation, slope);
+    },
+    false,
+  );
+  const beach = new THREE.Mesh(beachGeometry, shoreMaterial);
+  beach.receiveShadow = true;
+  scene.add(beach);
+  const landGeometry = makeRadialGeometry(
+    (angle) => poolShapeFactor(angle) + 0.09,
+    shoreShapeFactor,
+    14,
+    160,
+    (x, z) => landSurfaceY +
+      Math.sin(x * 0.38) * 0.035 +
+      Math.sin(z * 0.43) * 0.035 +
+      Math.sin((x + z) * 0.68) * 0.025,
+    false,
+  );
+  const land = new THREE.Mesh(landGeometry, grassMaterials[0]);
+  land.receiveShadow = true;
+  scene.add(land);
 
   const treeTrunkGeometry = new THREE.CylinderGeometry(0.13, 0.2, 1.35, 12);
   const treeBranchGeometry = new THREE.CylinderGeometry(0.045, 0.105, 0.78, 10);
@@ -482,8 +617,11 @@
     side: THREE.DoubleSide,
   });
   const groundPlantResources: Array<THREE.BufferGeometry | THREE.Material> = [
-    ...grassGeometries,
+    beachGeometry,
+    landGeometry,
     ...grassMaterials,
+    shoreMaterial,
+    shoreTexture,
     grassTexture,
     barkTexture,
     leafTexture,
@@ -504,17 +642,22 @@
   const shorelineTrees: THREE.Group[] = [];
   const shorelineBushes: THREE.Group[] = [];
   const shorelineGrass: THREE.Mesh[] = [];
-  const treeCount = THREE.MathUtils.randInt(12, 16);
-  const bushCount = THREE.MathUtils.randInt(20, 28);
-  const grassTuftCount = THREE.MathUtils.randInt(48, 72);
+  const landArea = landZones.reduce((area, zone) => area + zone.width * zone.depth, 0);
+  const landAreaScale = Math.min(1.8, landArea / 330);
+  const treeCount = THREE.MathUtils.randInt(Math.round(12 * landAreaScale), Math.round(16 * landAreaScale));
+  const bushCount = THREE.MathUtils.randInt(Math.round(20 * landAreaScale), Math.round(28 * landAreaScale));
+  const grassTuftCount = THREE.MathUtils.randInt(Math.round(48 * landAreaScale), Math.round(72 * landAreaScale));
 
   function randomLandPoint(zoneIndex: number, margin = 0.55) {
     const zone = landZones[zoneIndex];
-    return new THREE.Vector3(
-      THREE.MathUtils.randFloat(zone.minX + margin, zone.maxX - margin),
-      0,
-      THREE.MathUtils.randFloat(zone.minZ + margin, zone.maxZ - margin),
-    );
+    const angle = THREE.MathUtils.randFloat(zone.angleStart, zone.angleEnd);
+    const radialMargin = margin / Math.min(poolWidth, poolDepth) * 2;
+    const inner = poolShapeFactor(angle) + 0.06 + radialMargin;
+    const outer = Math.max(inner + 0.08, shoreShapeFactor(angle) - radialMargin);
+    const factor = THREE.MathUtils.randFloat(inner, outer);
+    const position = poolPoint(angle, factor);
+    position.y = 0;
+    return position;
   }
 
   function landHeightAt(x: number, z: number) {
@@ -1285,6 +1428,7 @@
       THREE.MathUtils.randFloat(-1.35, -0.42),
       THREE.MathUtils.randFloat(poolBack + 1.2, poolFront - 1.2),
     );
+    keepInsidePool(position, 0.9);
     const velocity = new THREE.Vector3(
       THREE.MathUtils.randFloatSpread(0.45),
       THREE.MathUtils.randFloatSpread(0.08),
@@ -1324,7 +1468,7 @@
   function updateCanvasDescription() {
     canvas.setAttribute(
       "aria-label",
-      `Three-dimensional tiled pool surrounded by randomized grassy banks with ${visibleTreeCount} trees, ${visibleBushCount} bushes, and four wandering land animals (${landAnimalAgents.map((animal) => animal.species).join(", ")}). The pool has a steerable sailboat, a school of ${fishCount} randomly generated fish (${fishTypeSummary}), an independently moving mallard, and a draggable sphere. Use the arrow keys to sail, drag open water to orbit the camera, or click the water to make a ripple.`,
+      `Three-dimensional pool with a randomly generated ${poolWidth.toFixed(1)} by ${poolDepth.toFixed(1)} unit basin and asymmetrical grassy banks. This world has ${visibleTreeCount} trees, ${visibleBushCount} bushes, and four wandering land animals (${landAnimalAgents.map((animal) => animal.species).join(", ")}). The pool has a steerable sailboat, a school of ${fishCount} randomly generated fish (${fishTypeSummary}), an independently moving mallard, and a draggable sphere. Use the arrow keys to sail, drag open water to orbit the camera, or click the water to make a ripple.`,
     );
   }
 
@@ -1451,11 +1595,14 @@
   });
 
   const sunDirection = new THREE.Vector3(-0.46, 0.42, -0.65).normalize();
-  const waterSegments = 128;
-  const waterGridSize = waterSegments + 1;
-  const waterGeometry = new THREE.PlaneGeometry(poolWidth - 0.2, poolDepth - 0.2, waterSegments, waterSegments);
+  const waterGeometry = makeRadialGeometry(
+    () => 0,
+    (angle) => poolShapeFactor(angle) + 0.015,
+    36,
+    192,
+    () => 0,
+  );
   disposableResources.push(waterGeometry);
-  waterGeometry.rotateX(-Math.PI / 2);
   const baseWaterPositions = new Float32Array(waterGeometry.attributes.position.array);
   const surfaceHeightSamples = new Float32Array(waterGeometry.attributes.position.count);
   let waterLevelOffset = 0;
@@ -1485,7 +1632,30 @@
       return texture2D( normalSampler, surfaceUv ) * 2.0;
     }`,
   );
-  water.position.set(0, 0, (poolBack + poolFront) / 2);
+  const waterColorUniform = "uniform vec3 waterColor;";
+  const waterOutput = "gl_FragColor = vec4( outgoingLight, alpha );";
+  if (!water.material.fragmentShader.includes(waterColorUniform) ||
+      !water.material.fragmentShader.includes(waterOutput)) {
+    throw new Error("The water shader no longer matches the shoreline fade mapping.");
+  }
+  water.material.fragmentShader = water.material.fragmentShader
+    .replace(waterColorUniform, `${waterColorUniform}
+      uniform vec2 poolHalfSize;
+      uniform float poolShapePhase;
+      uniform float poolShapeStrength;`)
+    .replace(waterOutput, `float basinAngle = atan(worldPosition.z / poolHalfSize.y, worldPosition.x / poolHalfSize.x);
+      float basinRadius = length(worldPosition.xz / poolHalfSize);
+      float basinEdge = 1.0 +
+        sin(basinAngle * 2.0 + poolShapePhase) * poolShapeStrength +
+        sin(basinAngle * 3.0 - poolShapePhase * 0.7) * poolShapeStrength * 0.32;
+      float shorelineFade = 1.0 - smoothstep(basinEdge - 0.015, basinEdge + 0.015, basinRadius);
+      gl_FragColor = vec4( outgoingLight, alpha * shorelineFade );`);
+  water.material.uniforms.poolHalfSize = {
+    value: new THREE.Vector2(poolWidth * 0.5, poolDepth * 0.5),
+  };
+  water.material.uniforms.poolShapePhase = { value: poolShapePhase };
+  water.material.uniforms.poolShapeStrength = { value: poolShapeStrength };
+  water.position.set(0, 0, 0);
   scene.add(water);
 
   let frame = 0;
@@ -1575,7 +1745,7 @@
       Math.sin((u * 3 + v * 2) * Math.PI * 2 + phase) * 0.12 +
       Math.sin((u * 5 - v * 3) * Math.PI * 2 - phase * 0.7) * 0.065;
 
-    return simulationHeight * 0.42 + windSwell - waterLevelOffset;
+    return (simulationHeight * 0.42 + windSwell - waterLevelOffset) * poolWaveEdgeFade(worldX, worldZ);
   }
 
   function setPointerFromClient(clientX: number, clientY: number) {
@@ -1614,8 +1784,17 @@
 
     const nextPosition = dragIntersection.add(dragOffset);
     nextPosition.x = clamp(nextPosition.x, -poolWidth / 2 + sphereRadius, poolWidth / 2 - sphereRadius);
-    nextPosition.y = clamp(nextPosition.y, poolFloor + sphereRadius, poolTop + sphereRadius * 3);
+    nextPosition.y = clamp(
+      nextPosition.y,
+      poolFloorHeight(nextPosition.x, nextPosition.z) + sphereRadius,
+      poolTop + sphereRadius * 3,
+    );
     nextPosition.z = clamp(nextPosition.z, poolBack + sphereRadius, poolFront - sphereRadius);
+    keepInsidePool(nextPosition, sphereRadius * 0.6);
+    nextPosition.y = Math.max(
+      nextPosition.y,
+      poolFloorHeight(nextPosition.x, nextPosition.z) + sphereRadius,
+    );
     const movement = nextPosition.clone().sub(sphere.position);
     const distance = movement.length();
     const deltaTime = Math.max((event.timeStamp - lastDragTime) / 1000, 0.001);
@@ -1659,9 +1838,13 @@
     const submergedDepth = clamp(waterHeight + sphereRadius - sphere.position.y, 0, sphereRadius * 2);
     const submergedFraction = submergedDepth * submergedDepth * (3 * sphereRadius - submergedDepth) /
       (4 * sphereRadius * sphereRadius * sphereRadius);
-    sphereVelocity.y += (-9.8 + submergedFraction * 110 - sphereVelocity.y * (0.7 + submergedFraction * 4)) * delta;
-    sphereVelocity.x *= Math.exp(-(1.8 + submergedFraction * 3) * delta);
-    sphereVelocity.z *= Math.exp(-(1.8 + submergedFraction * 3) * delta);
+    sphereVelocity.y += (-9.8 + submergedFraction * 28) * delta;
+    sphereVelocity.y *= Math.exp(
+      -(0.3 + submergedFraction * (7.5 + Math.abs(sphereVelocity.y) * 1.1)) * delta,
+    );
+    const horizontalDrag = Math.exp(-(1.4 + submergedFraction * 3.2) * delta);
+    sphereVelocity.x *= horizontalDrag;
+    sphereVelocity.z *= horizontalDrag;
 
     const nextX = sphere.position.x + sphereVelocity.x * delta;
     const nextY = sphere.position.y + sphereVelocity.y * delta;
@@ -1672,10 +1855,21 @@
     const maxZ = poolFront - sphereRadius;
 
     sphere.position.x = clamp(nextX, minX, maxX);
-    sphere.position.y = Math.max(nextY, poolFloor + sphereRadius);
+    sphere.position.y = Math.max(
+      nextY,
+      poolFloorHeight(sphere.position.x, sphere.position.z) + sphereRadius,
+    );
     sphere.position.z = clamp(nextZ, minZ, maxZ);
+    keepInsidePool(sphere.position, sphereRadius * 0.6);
+    sphere.position.y = Math.max(
+      sphere.position.y,
+      poolFloorHeight(sphere.position.x, sphere.position.z) + sphereRadius,
+    );
     if (nextX < minX || nextX > maxX) sphereVelocity.x *= -0.32;
     if (nextZ < minZ || nextZ > maxZ) sphereVelocity.z *= -0.32;
+    if (sphere.position.y <= poolFloorHeight(sphere.position.x, sphere.position.z) + sphereRadius && sphereVelocity.y < 0) {
+      sphereVelocity.y = 0;
+    }
 
     const currentWaterHeight = sampleWaveHeight(sphere.position.x, sphere.position.z);
     const inWater = sphere.position.y < currentWaterHeight + sphereRadius;
@@ -1763,6 +1957,7 @@
 
     duck.position.x += duckVelocityX * delta;
     duck.position.z += duckVelocityZ * delta;
+    keepInsidePool(duck.position, 0.7);
     const minX = -poolWidth / 2 + 1.2;
     const maxX = poolWidth / 2 - 1.2;
     const minZ = poolBack + 1.2;
@@ -1836,6 +2031,7 @@
     const maxZ = poolFront - 1.1;
     sailboat.position.x = clamp(nextX, minX, maxX);
     sailboat.position.z = clamp(nextZ, minZ, maxZ);
+    keepInsidePool(sailboat.position, 0.8);
     if (sailboat.position.x !== nextX) {
       sailboatVelocity.x = 0;
       sailboatVelocity.z *= 0.45;
@@ -2046,6 +2242,9 @@
     sailboat.position.z = clamp(sailboat.position.z, poolBack + 1.1, poolFront - 1.1);
     duck.position.x = clamp(duck.position.x, -poolWidth * 0.36, poolWidth * 0.36);
     duck.position.z = clamp(duck.position.z, poolBack + 1.5, poolFront - 1.5);
+    keepInsidePool(sailboat.position, 0.8);
+    keepInsidePool(duck.position, 0.7);
+    keepInsidePool(sphere.position, sphereRadius * 0.6);
     duckVelocityX = duckPlanarVelocity.x;
     duckVelocityZ = duckPlanarVelocity.z;
 
@@ -2086,6 +2285,7 @@
         position.addScaledVector(velocity, delta);
         position.x = clamp(position.x, -poolWidth / 2 + 0.85, poolWidth / 2 - 0.85);
         position.z = clamp(position.z, poolBack + 0.85, poolFront - 0.85);
+        keepInsidePool(position, 0.55);
         const waterHeight = sampleWaveHeight(position.x, position.z);
         if (velocity.y < 0 && position.y <= waterHeight) {
           position.y = waterHeight - 0.18;
@@ -2175,6 +2375,7 @@
       position.x = clamp(position.x, minX, maxX);
       position.y = clamp(position.y, minY, maxY);
       position.z = clamp(position.z, minZ, maxZ);
+      keepInsidePool(position, 0.55);
       fish.root.position.copy(position);
 
       horizontalSpeed = Math.hypot(velocity.x, velocity.z);
@@ -2214,22 +2415,16 @@
   function updateWaterSurface() {
     const positions = waterGeometry.attributes.position;
     let heightSum = 0;
-    let totalWeight = 0;
 
     for (let index = 0; index < positions.count; index++) {
       const worldX = baseWaterPositions[index * 3];
       const worldZ = baseWaterPositions[index * 3 + 2] + water.position.z;
       const height = sampleWaveHeight(worldX, worldZ);
       surfaceHeightSamples[index] = height;
-      const column = index % waterGridSize;
-      const row = Math.floor(index / waterGridSize);
-      const weight = (column === 0 || column === waterSegments ? 0.5 : 1) *
-        (row === 0 || row === waterSegments ? 0.5 : 1);
-      heightSum += height * weight;
-      totalWeight += weight;
+      heightSum += height;
     }
 
-    const meanHeight = heightSum / totalWeight;
+    const meanHeight = heightSum / positions.count;
     waterLevelOffset += meanHeight;
     for (let index = 0; index < positions.count; index++) {
       positions.setY(index, surfaceHeightSamples[index] - meanHeight);
