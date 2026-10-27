@@ -1781,9 +1781,10 @@
     const size = bounds.getSize(new THREE.Vector3());
     if (size.y <= 0) throw new Error("A downloaded landscape model has no measurable height.");
     const scale = targetHeight / size.y;
-    const minimum = bounds.min.clone();
+    const center = bounds.getCenter(new THREE.Vector3());
+    const groundSink = foliageType === "tree" ? 0.045 : 0.02;
     model.scale.setScalar(scale);
-    model.position.set(-minimum.x * scale, -minimum.y * scale, -minimum.z * scale);
+    model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
 
     const instance = new THREE.Group();
     instance.add(model);
@@ -1792,7 +1793,11 @@
     } else {
       addFoliageClusters(instance, THREE.MathUtils.randInt(18, 26), targetHeight, 0.38, [0.2, 0.76], 0.085, "bush");
     }
-    instance.position.set(position.x, landHeightAt(position.x, position.z), position.z);
+    instance.position.set(
+      position.x,
+      landHeightAt(position.x, position.z) - groundSink,
+      position.z,
+    );
     instance.rotation.y = rotation;
     return instance;
   }
